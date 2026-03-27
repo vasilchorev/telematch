@@ -1,2 +1,2 @@
 ALTER TABLE profiles
-    ADD COLUMN username TEXT UNIQUE;
+    ADD COLUMN IF NOT EXISTS username TEXT UNIQUE;
