@@ -27,14 +27,12 @@ pub enum TextKey {
     BackToMainMenu,
     ChangePhoto,
     ChangeBio,
-    SomeoneLikedYou,
-    SeeWhoLikedYou,
+    SomeoneLikedYouShowQuestion,
     LikeOrSkip,
     NoNewLikes,
     NoMoreProfiles,
     InactiveNow,
     ThisPersonLikedYou,
-    ThisPersonAlreadyLikedYou,
     MatchStartChatting,
     MatchNoUsername,
     Male,
@@ -80,18 +78,18 @@ impl Lang {
                 TextKey::BackToMainMenu => "Back to main menu",
                 TextKey::ChangePhoto => "Change photo",
                 TextKey::ChangeBio => "Change bio",
-                TextKey::SomeoneLikedYou => "Someone liked you.",
-                TextKey::SeeWhoLikedYou => "💖 See who liked you",
+                TextKey::SomeoneLikedYouShowQuestion => {
+                    "1 girl liked you, show her?\n\n1. Show.\n2. I don't want to view anyone anymore."
+                }
                 TextKey::LikeOrSkip => "Use the keyboard to Like or Skip.",
                 TextKey::NoNewLikes => "No new likes right now.",
                 TextKey::NoMoreProfiles => "No more matching profiles found right now.",
                 TextKey::InactiveNow => {
                     "Your profile is now inactive. Other people will no longer see it."
                 }
-                TextKey::ThisPersonLikedYou => "This person liked you.",
-                TextKey::ThisPersonAlreadyLikedYou => "This person already liked you.",
+                TextKey::ThisPersonLikedYou => "Someone liked your profile:",
                 TextKey::MatchStartChatting => {
-                    "Awesome! Hope you have a great time 🙌\n\nStart chatting 👉"
+                    "Awesome! Hope you have a great time 🙌\n\nStart chatting 👉 "
                 }
                 TextKey::MatchNoUsername => {
                     "This user does not have a public username, so Telegram may not let you open a direct chat from the bot."
@@ -135,16 +133,16 @@ impl Lang {
                 TextKey::BackToMainMenu => "Späť do hlavného menu",
                 TextKey::ChangePhoto => "Zmeniť fotku",
                 TextKey::ChangeBio => "Zmeniť popis",
-                TextKey::SomeoneLikedYou => "Niekto ťa lajkol.",
-                TextKey::SeeWhoLikedYou => "💖 Pozrieť, komu sa páčim",
+                TextKey::SomeoneLikedYouShowQuestion => {
+                    "Tvoj profil sa páčil 1 dievčaťu, chceš ju zobraziť?\n\n1. Zobraziť.\n2. Už nechcem nikoho pozerať."
+                }
                 TextKey::LikeOrSkip => "Použi klávesnicu na lajk alebo preskočenie.",
                 TextKey::NoNewLikes => "Momentálne nemáš žiadne nové lajky.",
                 TextKey::NoMoreProfiles => "Momentálne sa nenašli ďalšie vhodné profily.",
                 TextKey::InactiveNow => "Tvoj profil je teraz neaktívny. Ostatní ho už neuvidia.",
-                TextKey::ThisPersonLikedYou => "Táto osoba ťa lajkla.",
-                TextKey::ThisPersonAlreadyLikedYou => "Táto osoba ťa už lajkla.",
+                TextKey::ThisPersonLikedYou => "Niekomu sa páčil tvoj profil:",
                 TextKey::MatchStartChatting => {
-                    "Super! Dúfam, že si spolu užijete čas 🙌\n\nZačni chatovať 👉"
+                    "Super! Dúfam, že si spolu užijete čas 🙌\n\nZačni chatovať 👉 "
                 }
                 TextKey::MatchNoUsername => {
                     "Tento používateľ nemá verejné používateľské meno, takže Telegram nemusí umožniť otvorenie priameho chatu z bota."
@@ -188,18 +186,18 @@ impl Lang {
                 TextKey::BackToMainMenu => "Назад у головне меню",
                 TextKey::ChangePhoto => "Змінити фото",
                 TextKey::ChangeBio => "Змінити опис",
-                TextKey::SomeoneLikedYou => "Хтось тебе лайкнув.",
-                TextKey::SeeWhoLikedYou => "💖 Подивитися, кому я сподобався",
+                TextKey::SomeoneLikedYouShowQuestion => {
+                    "Ти сподобався 1 дівчині, показати її?\n\n1. Показати.\n2. Я більше не хочу нікого дивитись."
+                }
                 TextKey::LikeOrSkip => "Використай клавіатуру, щоб лайкнути або пропустити.",
                 TextKey::NoNewLikes => "Зараз немає нових лайків.",
                 TextKey::NoMoreProfiles => "Зараз більше відповідних профілів не знайдено.",
                 TextKey::InactiveNow => {
                     "Твій профіль тепер неактивний. Інші його більше не бачитимуть."
                 }
-                TextKey::ThisPersonLikedYou => "Ця людина тебе лайкнула.",
-                TextKey::ThisPersonAlreadyLikedYou => "Ця людина вже тебе лайкнула.",
+                TextKey::ThisPersonLikedYou => "Комусь сподобалась твоя анкета:",
                 TextKey::MatchStartChatting => {
-                    "Cупер! Сподіваюсь, гарно проведете час 🙌\n\nПочинай спілкуватися👉"
+                    "Cупер! Сподіваюсь, гарно проведете час 🙌\n\nПочинай спілкуватися 👉 "
                 }
                 TextKey::MatchNoUsername => {
                     "У цього користувача немає публічного username, тому Telegram може не дозволити відкрити приватний чат із бота."

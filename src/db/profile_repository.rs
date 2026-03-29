@@ -34,10 +34,7 @@ impl ProfileRow {
     }
 }
 
-pub async fn save_profile(
-    pool: &PgPool,
-    profile: &CompleteProfile,
-) -> Result<(), sqlx::Error> {
+pub async fn save_profile(pool: &PgPool, profile: &CompleteProfile) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
         INSERT INTO profiles (
@@ -68,19 +65,19 @@ pub async fn save_profile(
             photo_file_id = EXCLUDED.photo_file_id
         "#,
     )
-        .bind(profile.telegram_user_id)
-        .bind(profile.chat_id)
-        .bind(profile.username.as_deref())
-        .bind(&profile.language_code)
-        .bind(&profile.name)
-        .bind(profile.gender.as_db_code())
-        .bind(profile.looking_for.as_db_code())
-        .bind(profile.age as i16)
-        .bind(&profile.location)
-        .bind(&profile.description)
-        .bind(&profile.photo)
-        .execute(pool)
-        .await?;
+    .bind(profile.telegram_user_id)
+    .bind(profile.chat_id)
+    .bind(profile.username.as_deref())
+    .bind(&profile.language_code)
+    .bind(&profile.name)
+    .bind(profile.gender.as_db_code())
+    .bind(profile.looking_for.as_db_code())
+    .bind(profile.age as i16)
+    .bind(&profile.location)
+    .bind(&profile.description)
+    .bind(&profile.photo)
+    .execute(pool)
+    .await?;
 
     Ok(())
 }
@@ -155,10 +152,7 @@ pub async fn get_profile_by_user_id(
     .await
 }
 
-pub async fn deactivate_profile(
-    pool: &PgPool,
-    telegram_user_id: i64,
-) -> Result<(), sqlx::Error> {
+pub async fn deactivate_profile(pool: &PgPool, telegram_user_id: i64) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
         UPDATE profiles
@@ -166,17 +160,14 @@ pub async fn deactivate_profile(
         WHERE telegram_user_id = $1
         "#,
     )
-        .bind(telegram_user_id)
-        .execute(pool)
-        .await?;
+    .bind(telegram_user_id)
+    .execute(pool)
+    .await?;
 
     Ok(())
 }
 
-pub async fn activate_profile(
-    pool: &PgPool,
-    telegram_user_id: i64,
-) -> Result<(), sqlx::Error> {
+pub async fn activate_profile(pool: &PgPool, telegram_user_id: i64) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
         UPDATE profiles
@@ -184,9 +175,9 @@ pub async fn activate_profile(
         WHERE telegram_user_id = $1
         "#,
     )
-        .bind(telegram_user_id)
-        .execute(pool)
-        .await?;
+    .bind(telegram_user_id)
+    .execute(pool)
+    .await?;
 
     Ok(())
 }

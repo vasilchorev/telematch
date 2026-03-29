@@ -1,7 +1,7 @@
+use crate::Lang;
+use crate::bot::i18n::TextKey;
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
-use crate::bot::i18n::TextKey;
-use crate::Lang;
 
 #[derive(Debug, Clone, Default)]
 pub struct Profile {
@@ -73,10 +73,7 @@ impl TryFrom<&Profile> for CompleteProfile {
                 profile.language_code.as_deref(),
                 ProfileValidationError::MissingLanguageCode,
             )?,
-            name: required_text(
-                profile.name.as_deref(),
-                ProfileValidationError::MissingName,
-            )?,
+            name: required_text(profile.name.as_deref(), ProfileValidationError::MissingName)?,
             gender: profile
                 .gender
                 .ok_or(ProfileValidationError::MissingGender)?,
@@ -159,24 +156,6 @@ impl Gender {
         if text == lang.text(TextKey::Male) {
             Some(Self::Male)
         } else if text == lang.text(TextKey::Female) {
-            Some(Self::Female)
-        } else {
-            None
-        }
-    }
-
-    pub fn from_any_translation(text: &str) -> Option<Self> {
-        let text = text.trim();
-
-        if text == Lang::En.text(TextKey::Male)
-            || text == Lang::Sk.text(TextKey::Male)
-            || text == Lang::Uk.text(TextKey::Male)
-        {
-            Some(Self::Male)
-        } else if text == Lang::En.text(TextKey::Female)
-            || text == Lang::Sk.text(TextKey::Female)
-            || text == Lang::Uk.text(TextKey::Female)
-        {
             Some(Self::Female)
         } else {
             None
