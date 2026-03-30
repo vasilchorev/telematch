@@ -2,6 +2,7 @@ mod app;
 mod bot;
 mod db;
 mod models;
+mod geocoding;
 
 pub use app::Lang;
 

@@ -1,3 +1,4 @@
+use super::resume_main_menu;
 use crate::app::types::{
     ConfirmationAction, EditMenuAction, HandlerResult, Lang, MyDialogue, State, profile_lang,
 };
@@ -7,12 +8,16 @@ use crate::app::ui::{
     require_sender, send_profile, show_edit_menu,
 };
 use crate::bot::i18n::TextKey;
-use crate::bot::keyboards::make_profile_confirmation_keyboard;
+use crate::bot::keyboards::{
+    make_keep_previous_photo_keyboard, make_location_choice_keyboard, make_location_keyboard,
+    make_previous_value_keyboard, make_profile_confirmation_keyboard, make_skip_keyboard,
+};
 use crate::db::profile_repository::{get_profile_by_user_id, save_profile};
 use crate::db::swipe_repository::get_incoming_like_for_user;
 use crate::models::{CompleteProfile, Gender, Profile};
 use sqlx::PgPool;
 use teloxide::prelude::*;
+use teloxide::types::KeyboardMarkup;
 
 pub async fn global_start(
     bot: Bot,
@@ -41,8 +46,23 @@ pub async fn global_start(
     Ok(())
 }
 
-pub async fn start(bot: Bot, dialogue: MyDialogue, msg: Message) -> HandlerResult {
-    enter_language_selection(&bot, &dialogue, msg.chat.id).await
+pub async fn start(
+    bot: Bot,
+    dialogue: MyDialogue,
+    msg: Message,
+    pool: PgPool,
+) -> HandlerResult {
+    let Some(sender) = require_sender(&bot, &msg).await? else {
+        return Ok(());
+    };
+
+    if let Some(profile_row) = get_profile_by_user_id(&pool, sender.telegram_user_id).await? {
+        resume_main_menu(bot, dialogue, msg, profile_row.to_profile(), pool).await?;
+    } else {
+        enter_language_selection(&bot, &dialogue, msg.chat.id).await?;
+    }
+
+    Ok(())
 }
 
 pub async fn receive_language(bot: Bot, dialogue: MyDialogue, msg: Message) -> HandlerResult {
@@ -62,8 +82,14 @@ pub async fn receive_language(bot: Bot, dialogue: MyDialogue, msg: Message) -> H
         ..Profile::default()
     };
 
-    bot.send_message(msg.chat.id, lang.text(TextKey::WhatIsYourName))
-        .await?;
+    prompt_for_name_input(
+        &bot,
+        msg.chat.id,
+        lang,
+        TextKey::WhatIsYourName,
+        draft.name.as_deref(),
+    )
+    .await?;
     dialogue.update(State::WaitingForName { draft }).await?;
 
     Ok(())
@@ -77,8 +103,14 @@ pub async fn receive_name(
 ) -> HandlerResult {
     let lang = profile_lang(&draft);
     let Some(name) = msg.text().map(str::trim).filter(|text| !text.is_empty()) else {
-        bot.send_message(msg.chat.id, lang.text(TextKey::NonEmptyName))
-            .await?;
+        prompt_for_name_input(
+            &bot,
+            msg.chat.id,
+            lang,
+            TextKey::NonEmptyName,
+            draft.name.as_deref(),
+        )
+        .await?;
         return Ok(());
     };
 
@@ -157,8 +189,7 @@ pub async fn receive_looking_for(
 
     draft.looking_for = Some(looking_for);
 
-    bot.send_message(msg.chat.id, lang.text(TextKey::AskAge))
-        .await?;
+    prompt_for_age_input(&bot, msg.chat.id, lang, draft.age).await?;
     dialogue.update(State::WaitingForAge { draft }).await?;
 
     Ok(())
@@ -173,16 +204,27 @@ pub async fn receive_age(
     let lang = profile_lang(&draft);
 
     let Some(age) = msg.text().and_then(parse_age) else {
-        bot.send_message(msg.chat.id, lang.text(TextKey::AskAge))
-            .await?;
+        prompt_for_age_input(&bot, msg.chat.id, lang, draft.age).await?;
         return Ok(());
     };
 
     draft.age = Some(age);
 
-    bot.send_message(msg.chat.id, lang.text(TextKey::AskLocation))
-        .await?;
+    prompt_for_location_input(&bot, msg.chat.id, lang, draft.location.as_deref()).await?;
     dialogue.update(State::WaitingForLocation { draft }).await?;
+
+    Ok(())
+}
+
+async fn prompt_for_location_input(
+    bot: &Bot,
+    chat_id: ChatId,
+    lang: Lang,
+    previous_location: Option<&str>,
+) -> Result<(), teloxide::RequestError> {
+    bot.send_message(chat_id, lang.text(TextKey::AskLocation))
+        .reply_markup(make_location_keyboard(lang, previous_location))
+        .await?;
 
     Ok(())
 }
@@ -192,24 +234,162 @@ pub async fn receive_location(
     dialogue: MyDialogue,
     msg: Message,
     mut draft: Profile,
+    geocoder: crate::geocoding::Geocoder,
 ) -> HandlerResult {
     let lang = profile_lang(&draft);
-    let Some(location) = msg.text().map(str::trim).filter(|text| !text.is_empty()) else {
-        bot.send_message(msg.chat.id, lang.text(TextKey::AskLocation))
+
+    // if user sent location via Telegram's location sharing
+    if let Some(shared_location) = msg.location() {
+        let Some(city) = geocoder
+            .reverse_geocode_city(shared_location.latitude, shared_location.longitude, lang)
+            .await?
+        else {
+            prompt_for_location_input(&bot, msg.chat.id, lang, draft.location.as_deref()).await?;
+            return Ok(());
+        };
+
+        draft.location = Some(city.label);
+        draft.latitude = Some(shared_location.latitude);
+        draft.longitude = Some(shared_location.longitude);
+
+        log::info!(
+            "User {} shared location, resolved city: {}, latitude: {}, longitude: {}",
+            draft.telegram_user_id.unwrap_or_default(),
+            draft.location.as_deref().unwrap_or_default(), draft.latitude.unwrap_or_default(), draft.longitude.unwrap_or_default()
+        );
+
+        prompt_for_description_input(
+            &bot,
+            msg.chat.id,
+            lang,
+            TextKey::AskBio,
+            draft.description.as_deref(),
+        )
+        .await?;
+        dialogue
+            .update(State::WaitingForDescription { draft })
+            .await?;
+
+        return Ok(());
+    }
+
+    // else - user sent location as text, try to geocode it
+    let Some(query) = msg.text().map(str::trim).filter(|text| !text.is_empty()) else {
+        prompt_for_location_input(&bot, msg.chat.id, lang, draft.location.as_deref()).await?;
+        return Ok(());
+    };
+
+    if should_keep_existing_location(query, &draft) {
+        prompt_for_description_input(
+            &bot,
+            msg.chat.id,
+            lang,
+            TextKey::AskBio,
+            draft.description.as_deref(),
+        )
+        .await?;
+        dialogue
+            .update(State::WaitingForDescription { draft })
+            .await?;
+        return Ok(());
+    }
+
+    let candidates = geocoder.search_cities(query, lang).await?;
+
+    match candidates.len() {
+        0 => {
+            prompt_for_location_input(&bot, msg.chat.id, lang, draft.location.as_deref()).await?;
+        }
+        1 => {
+            let candidate = &candidates[0];
+            draft.location = Some(candidate.label.clone());
+            draft.latitude = Some(candidate.latitude);
+            draft.longitude = Some(candidate.longitude);
+
+            prompt_for_description_input(
+                &bot,
+                msg.chat.id,
+                lang,
+                TextKey::AskBio,
+                draft.description.as_deref(),
+            )
+            .await?;
+            dialogue
+                .update(State::WaitingForDescription { draft })
+                .await?;
+        }
+        _ => {
+            let text = candidates
+                .iter()
+                .enumerate()
+                .map(|(index, candidate)| format!("{}. {}", index + 1, candidate.label))
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            bot.send_message(msg.chat.id, text)
+                .reply_markup(make_location_choice_keyboard(candidates.len()))
+                .await?;
+
+            dialogue
+                .update(State::WaitingForLocationChoice { draft, candidates })
+                .await?;
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn receive_location_choice(
+    bot: Bot,
+    dialogue: MyDialogue,
+    msg: Message,
+    (mut draft, candidates): (Profile, Vec<crate::geocoding::CityCandidate>),
+) -> HandlerResult {
+    let lang = profile_lang(&draft);
+
+    let Some(choice) = msg
+        .text()
+        .map(str::trim)
+        .and_then(|text| text.parse::<usize>().ok())
+        .filter(|choice| *choice >= 1 && *choice <= candidates.len())
+    else {
+        let text = candidates
+            .iter()
+            .enumerate()
+            .map(|(index, candidate)| format!("{}. {}", index + 1, candidate.label))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        bot.send_message(msg.chat.id, text)
+            .reply_markup(make_location_choice_keyboard(candidates.len()))
+            .await?;
+
+        dialogue
+            .update(State::WaitingForLocationChoice { draft, candidates })
             .await?;
         return Ok(());
     };
 
-    draft.location = Some(location.to_owned());
+    let candidate = &candidates[choice - 1];
+    draft.location = Some(candidate.label.clone());
+    draft.latitude = Some(candidate.latitude);
+    draft.longitude = Some(candidate.longitude);
 
-    bot.send_message(msg.chat.id, lang.text(TextKey::AskBio))
-        .await?;
+    prompt_for_description_input(
+        &bot,
+        msg.chat.id,
+        lang,
+        TextKey::AskBio,
+        draft.description.as_deref(),
+    )
+    .await?;
     dialogue
         .update(State::WaitingForDescription { draft })
         .await?;
 
     Ok(())
 }
+
 
 pub async fn receive_description(
     bot: Bot,
@@ -218,16 +398,28 @@ pub async fn receive_description(
     mut draft: Profile,
 ) -> HandlerResult {
     let lang = profile_lang(&draft);
-    let Some(description) = msg.text().map(str::trim).filter(|text| !text.is_empty()) else {
-        bot.send_message(msg.chat.id, lang.text(TextKey::AskBio))
-            .await?;
+    let Some(description) = description_input(msg.text(), lang) else {
+        prompt_for_description_input(
+            &bot,
+            msg.chat.id,
+            lang,
+            TextKey::NonEmptyBio,
+            draft.description.as_deref(),
+        )
+        .await?;
         return Ok(());
     };
 
-    draft.description = Some(description.to_owned());
+    draft.description = Some(description);
 
-    bot.send_message(msg.chat.id, lang.text(TextKey::AskPhoto))
-        .await?;
+    prompt_for_photo_input(
+        &bot,
+        msg.chat.id,
+        lang,
+        TextKey::AskPhoto,
+        draft.photo.as_deref(),
+    )
+    .await?;
     dialogue.update(State::WaitingForPhoto { draft }).await?;
 
     Ok(())
@@ -240,9 +432,17 @@ pub async fn receive_photo(
     mut draft: Profile,
 ) -> HandlerResult {
     let lang = profile_lang(&draft);
-    let Some(photo_file_id) = extract_photo_file_id(&msg) else {
-        bot.send_message(msg.chat.id, lang.text(TextKey::AskPhoto))
-            .await?;
+    let Some(photo_file_id) =
+        extract_photo_file_id(&msg).or_else(|| kept_photo_file_id(msg.text(), lang, &draft))
+    else {
+        prompt_for_photo_input(
+            &bot,
+            msg.chat.id,
+            lang,
+            TextKey::AskPhoto,
+            draft.photo.as_deref(),
+        )
+        .await?;
         return Ok(());
     };
 
@@ -302,22 +502,40 @@ pub async fn edit_profile_menu(
 
     match EditMenuAction::parse(text) {
         Some(EditMenuAction::EditProfile) => {
-            bot.send_message(msg.chat.id, lang.text(TextKey::RebuildProfile))
-                .await?;
+            prompt_for_name_input(
+                &bot,
+                msg.chat.id,
+                lang,
+                TextKey::RebuildProfile,
+                profile.name.as_deref(),
+            )
+            .await?;
             dialogue
                 .update(State::WaitingForName { draft: profile })
                 .await?;
         }
         Some(EditMenuAction::ChangePhoto) => {
-            bot.send_message(msg.chat.id, lang.text(TextKey::AskPhoto))
-                .await?;
+            prompt_for_photo_input(
+                &bot,
+                msg.chat.id,
+                lang,
+                TextKey::AskPhoto,
+                profile.photo.as_deref(),
+            )
+            .await?;
             dialogue
                 .update(State::WaitingForPhotoEdit { draft: profile })
                 .await?;
         }
         Some(EditMenuAction::ChangeBio) => {
-            bot.send_message(msg.chat.id, lang.text(TextKey::AskBio))
-                .await?;
+            prompt_for_description_input(
+                &bot,
+                msg.chat.id,
+                lang,
+                TextKey::AskBio,
+                profile.description.as_deref(),
+            )
+            .await?;
             dialogue
                 .update(State::WaitingForDescriptionEdit { draft: profile })
                 .await?;
@@ -340,9 +558,17 @@ pub async fn edit_photo(
     mut draft: Profile,
 ) -> HandlerResult {
     let lang = profile_lang(&draft);
-    let Some(photo_file_id) = extract_photo_file_id(&msg) else {
-        bot.send_message(msg.chat.id, lang.text(TextKey::SendPhotoMessage))
-            .await?;
+    let Some(photo_file_id) =
+        extract_photo_file_id(&msg).or_else(|| kept_photo_file_id(msg.text(), lang, &draft))
+    else {
+        prompt_for_photo_input(
+            &bot,
+            msg.chat.id,
+            lang,
+            TextKey::SendPhotoMessage,
+            draft.photo.as_deref(),
+        )
+        .await?;
         return Ok(());
     };
 
@@ -361,13 +587,19 @@ pub async fn edit_description(
     mut draft: Profile,
 ) -> HandlerResult {
     let lang = profile_lang(&draft);
-    let Some(description) = msg.text().map(str::trim).filter(|text| !text.is_empty()) else {
-        bot.send_message(msg.chat.id, lang.text(TextKey::NonEmptyBio))
-            .await?;
+    let Some(description) = description_input(msg.text(), lang) else {
+        prompt_for_description_input(
+            &bot,
+            msg.chat.id,
+            lang,
+            TextKey::NonEmptyBio,
+            draft.description.as_deref(),
+        )
+        .await?;
         return Ok(());
     };
 
-    draft.description = Some(description.to_owned());
+    draft.description = Some(description);
 
     preview_profile_for_confirmation(&bot, msg.chat.id, lang, &draft).await?;
     dialogue.update(State::ConfirmProfile { draft }).await?;
@@ -457,4 +689,123 @@ async fn save_current_draft(
 fn parse_age(text: &str) -> Option<u8> {
     let age = text.trim().parse::<u8>().ok()?;
     (1..=100).contains(&age).then_some(age)
+}
+
+async fn prompt_for_name_input(
+    bot: &Bot,
+    chat_id: ChatId,
+    lang: Lang,
+    prompt_key: TextKey,
+    previous_name: Option<&str>,
+) -> Result<(), teloxide::RequestError> {
+    send_message_with_optional_keyboard(
+        bot,
+        chat_id,
+        lang.text(prompt_key),
+        previous_value_keyboard(previous_name),
+    )
+    .await
+}
+
+async fn prompt_for_age_input(
+    bot: &Bot,
+    chat_id: ChatId,
+    lang: Lang,
+    previous_age: Option<u8>,
+) -> Result<(), teloxide::RequestError> {
+    send_message_with_optional_keyboard(
+        bot,
+        chat_id,
+        lang.text(TextKey::AskAge),
+        previous_age.map(|age| make_previous_value_keyboard(age.to_string())),
+    )
+    .await
+}
+
+async fn prompt_for_description_input(
+    bot: &Bot,
+    chat_id: ChatId,
+    lang: Lang,
+    prompt_key: TextKey,
+    previous_description: Option<&str>,
+) -> Result<(), teloxide::RequestError> {
+    send_message_with_optional_keyboard(
+        bot,
+        chat_id,
+        lang.text(prompt_key),
+        description_keyboard(lang, previous_description),
+    )
+    .await
+}
+
+async fn prompt_for_photo_input(
+    bot: &Bot,
+    chat_id: ChatId,
+    lang: Lang,
+    prompt_key: TextKey,
+    previous_photo: Option<&str>,
+) -> Result<(), teloxide::RequestError> {
+    send_message_with_optional_keyboard(
+        bot,
+        chat_id,
+        lang.text(prompt_key),
+        non_empty_value(previous_photo).map(|_| make_keep_previous_photo_keyboard(lang)),
+    )
+    .await
+}
+
+async fn send_message_with_optional_keyboard(
+    bot: &Bot,
+    chat_id: ChatId,
+    text: &str,
+    keyboard: Option<KeyboardMarkup>,
+) -> Result<(), teloxide::RequestError> {
+    match keyboard {
+        Some(keyboard) => {
+            bot.send_message(chat_id, text)
+                .reply_markup(keyboard)
+                .await?;
+        }
+        None => {
+            bot.send_message(chat_id, text).await?;
+        }
+    }
+
+    Ok(())
+}
+
+fn previous_value_keyboard(value: Option<&str>) -> Option<KeyboardMarkup> {
+    non_empty_value(value).map(make_previous_value_keyboard)
+}
+
+fn description_keyboard(lang: Lang, previous_description: Option<&str>) -> Option<KeyboardMarkup> {
+    previous_value_keyboard(previous_description).or_else(|| Some(make_skip_keyboard(lang)))
+}
+
+fn non_empty_value(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
+}
+
+fn description_input(text: Option<&str>, lang: Lang) -> Option<String> {
+    match text.map(str::trim) {
+        Some(text) if text == lang.text(TextKey::SkipInput) => Some(String::new()),
+        Some(text) if !text.is_empty() => Some(text.to_owned()),
+        _ => None,
+    }
+}
+
+fn should_keep_existing_location(query: &str, draft: &Profile) -> bool {
+    matches!(
+        non_empty_value(draft.location.as_deref()),
+        Some(location)
+            if location == query.trim() && draft.latitude.is_some() && draft.longitude.is_some()
+    )
+}
+
+fn kept_photo_file_id(text: Option<&str>, lang: Lang, draft: &Profile) -> Option<String> {
+    if text.map(str::trim) == Some(lang.text(TextKey::KeepPreviousPhoto)) {
+        non_empty_value(draft.photo.as_deref()).map(ToOwned::to_owned)
+    } else {
+        None
+    }
 }

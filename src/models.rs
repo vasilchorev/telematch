@@ -16,6 +16,8 @@ pub struct Profile {
     pub location: Option<String>,
     pub description: Option<String>,
     pub photo: Option<String>,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
 }
 
 impl Profile {
@@ -37,7 +39,7 @@ impl Profile {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CompleteProfile {
     pub telegram_user_id: i64,
     pub chat_id: i64,
@@ -50,6 +52,8 @@ pub struct CompleteProfile {
     pub location: String,
     pub description: String,
     pub photo: String,
+    pub latitude: f64,
+    pub longitude: f64,
 }
 
 impl TryFrom<&Profile> for CompleteProfile {
@@ -85,14 +89,18 @@ impl TryFrom<&Profile> for CompleteProfile {
                 profile.location.as_deref(),
                 ProfileValidationError::MissingLocation,
             )?,
-            description: required_text(
-                profile.description.as_deref(),
-                ProfileValidationError::MissingDescription,
-            )?,
+            description: profile
+                .description
+                .as_deref()
+                .map(str::trim)
+                .unwrap_or_default()
+                .to_owned(),
             photo: required_text(
                 profile.photo.as_deref(),
                 ProfileValidationError::MissingPhoto,
             )?,
+            latitude: profile.latitude.ok_or(ProfileValidationError::MissingLocation)?,
+            longitude: profile.longitude.ok_or(ProfileValidationError::MissingLocation)?,
         })
     }
 }
@@ -116,7 +124,6 @@ pub enum ProfileValidationError {
     MissingAge,
     InvalidAge(u8),
     MissingLocation,
-    MissingDescription,
     MissingPhoto,
     MissingTelegramUserId,
     MissingChatId,
@@ -135,7 +142,6 @@ impl Display for ProfileValidationError {
             Self::MissingAge => write!(f, "age is missing"),
             Self::InvalidAge(age) => write!(f, "age {age} is outside the allowed range"),
             Self::MissingLocation => write!(f, "location is missing"),
-            Self::MissingDescription => write!(f, "bio is missing"),
             Self::MissingPhoto => write!(f, "photo is missing"),
         }
     }

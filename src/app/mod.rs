@@ -4,12 +4,7 @@ pub mod ui;
 
 pub use types::Lang;
 
-use crate::app::handlers::{
-    confirm_profile, edit_description, edit_photo, edit_profile_menu,
-    global_incoming_like_decision, global_start, handle_incoming_like_decision,
-    handle_profile_action, main_menu, receive_age, receive_description, receive_gender,
-    receive_language, receive_location, receive_looking_for, receive_name, receive_photo, start,
-};
+use crate::app::handlers::{confirm_profile, edit_description, edit_photo, edit_profile_menu, global_incoming_like_decision, global_start, handle_incoming_like_decision, handle_profile_action, main_menu, receive_age, receive_description, receive_gender, receive_language, receive_language_preference, receive_location, receive_location_choice, receive_looking_for, receive_name, receive_photo, settings_menu, start};
 use crate::app::types::State;
 use crate::app::ui::{is_incoming_like_decision_message, is_start_command};
 use crate::db::connect_db;
@@ -24,6 +19,8 @@ pub async fn run() {
 
     let bot = Bot::from_env();
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let geocoder = crate::geocoding::Geocoder::new()
+        .expect("GOOGLE_MAPS_API_KEY must be set and geocoder must initialize");
 
     let pool: PgPool = connect_db(&database_url)
         .await
@@ -40,6 +37,10 @@ pub async fn run() {
             )
             .branch(dptree::case![State::Start].endpoint(start))
             .branch(dptree::case![State::WaitingForLanguage].endpoint(receive_language))
+            .branch(
+                dptree::case![State::WaitingForLanguagePreference { profile }]
+                    .endpoint(receive_language_preference),
+            )
             .branch(dptree::case![State::WaitingForName { draft }].endpoint(receive_name))
             .branch(dptree::case![State::WaitingForGender { draft }].endpoint(receive_gender))
             .branch(
@@ -48,11 +49,16 @@ pub async fn run() {
             .branch(dptree::case![State::WaitingForAge { draft }].endpoint(receive_age))
             .branch(dptree::case![State::WaitingForLocation { draft }].endpoint(receive_location))
             .branch(
+                dptree::case![State::WaitingForLocationChoice { draft, candidates }]
+                    .endpoint(receive_location_choice),
+            )
+            .branch(
                 dptree::case![State::WaitingForDescription { draft }].endpoint(receive_description),
             )
             .branch(dptree::case![State::WaitingForPhoto { draft }].endpoint(receive_photo))
             .branch(dptree::case![State::ConfirmProfile { draft }].endpoint(confirm_profile))
             .branch(dptree::case![State::EditMenu { profile }].endpoint(edit_profile_menu))
+            .branch(dptree::case![State::SettingsMenu { profile }].endpoint(settings_menu))
             .branch(dptree::case![State::WaitingForPhotoEdit { draft }].endpoint(edit_photo))
             .branch(
                 dptree::case![State::WaitingForDescriptionEdit { draft }]
@@ -75,7 +81,7 @@ pub async fn run() {
             )
             .branch(dptree::case![State::MainMenu { profile }].endpoint(main_menu)),
     )
-    .dependencies(dptree::deps![InMemStorage::<State>::new(), pool])
+    .dependencies(dptree::deps![InMemStorage::<State>::new(), pool, geocoder])
     .enable_ctrlc_handler()
     .build()
     .dispatch()

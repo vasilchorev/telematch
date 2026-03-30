@@ -1,22 +1,22 @@
 use crate::app::types::{
     HandlerResult, IncomingLikeDecision, Lang, MainMenuAction, MyDialogue, REVEAL_SPINNER_TEXT,
-    State, SwipeDecision, profile_lang,
+    SettingsAction, State, SwipeDecision, profile_lang,
 };
 use crate::app::ui::{
-    match_notification_text, move_to_edit_menu, move_to_main_menu, prompt_for_profile_action,
-    prompt_incoming_like_decision, prompt_language_selection, require_sender, send_profile,
-    show_main_menu, show_profile_for_action,
+    match_notification_text, move_to_edit_menu, move_to_main_menu, move_to_settings_menu,
+    prompt_for_profile_action, prompt_incoming_like_decision, prompt_language_selection,
+    require_sender, send_profile, show_main_menu, show_profile_for_action, show_settings_menu,
 };
 use crate::bot::i18n::TextKey;
 use crate::db::profile_repository::{
     ProfileRow, activate_profile, deactivate_profile, get_next_profile_for_user,
-    get_profile_by_user_id,
+    get_profile_by_user_id, save_profile,
 };
 use crate::db::swipe_repository::{
     did_user_like_me, get_incoming_like_for_user, get_pending_mutual_match_for_user,
     mark_match_shown_to_user, save_swipe, was_match_shown_to_user,
 };
-use crate::models::Profile;
+use crate::models::{CompleteProfile, Profile};
 use sqlx::PgPool;
 use teloxide::prelude::*;
 use teloxide::sugar::request::RequestLinkPreviewExt;
@@ -79,38 +79,97 @@ pub async fn main_menu(
         return Ok(());
     };
 
-    match MainMenuAction::parse(text) {
-        Some(MainMenuAction::ViewProfiles) => {
-            let Some(sender) = require_sender(&bot, &msg).await? else {
-                return Ok(());
-            };
+    let Some(action) = MainMenuAction::parse(text) else {
+        show_main_menu(&bot, msg.chat.id, lang).await?;
+        return Ok(());
+    };
 
-            activate_profile(&pool, sender.telegram_user_id).await?;
-            show_next_profile_or_menu(&bot, &dialogue, &msg, profile, &pool).await?;
-        }
-        Some(MainMenuAction::MyProfile) => {
-            send_profile(&bot, msg.chat.id, &profile, None, None, None).await?;
-            move_to_edit_menu(&bot, &dialogue, msg.chat.id, profile).await?;
-        }
-        Some(MainMenuAction::DeactivateProfile) => {
-            let Some(sender) = require_sender(&bot, &msg).await? else {
-                return Ok(());
-            };
+    handle_main_menu_action(&bot, &dialogue, &msg, profile, &pool, action).await?;
 
-            deactivate_and_return_to_menu(
-                &bot,
-                &dialogue,
-                msg.chat.id,
-                sender.telegram_user_id,
-                profile,
-                &pool,
-            )
-            .await?;
+    Ok(())
+}
+
+pub async fn resume_main_menu(
+    bot: Bot,
+    dialogue: MyDialogue,
+    msg: Message,
+    profile: Profile,
+    pool: PgPool,
+) -> HandlerResult {
+    if let Some(action) = msg.text().and_then(MainMenuAction::parse) {
+        handle_main_menu_action(&bot, &dialogue, &msg, profile, &pool, action).await?;
+    } else {
+        move_to_main_menu(&bot, &dialogue, msg.chat.id, profile).await?;
+    }
+
+    Ok(())
+}
+
+pub async fn settings_menu(
+    bot: Bot,
+    dialogue: MyDialogue,
+    msg: Message,
+    profile: Profile,
+) -> HandlerResult {
+    let lang = profile_lang(&profile);
+
+    let Some(text) = msg.text() else {
+        show_settings_menu(&bot, msg.chat.id, lang).await?;
+        return Ok(());
+    };
+
+    match SettingsAction::parse(text) {
+        Some(SettingsAction::ChangeLanguage) => {
+            prompt_language_selection(&bot, msg.chat.id).await?;
+            dialogue
+                .update(State::WaitingForLanguagePreference { profile })
+                .await?;
+        }
+        Some(SettingsAction::BackToMainMenu) => {
+            move_to_main_menu(&bot, &dialogue, msg.chat.id, profile).await?;
         }
         None => {
-            show_main_menu(&bot, msg.chat.id, lang).await?;
+            show_settings_menu(&bot, msg.chat.id, lang).await?;
         }
     }
+
+    Ok(())
+}
+
+pub async fn receive_language_preference(
+    bot: Bot,
+    dialogue: MyDialogue,
+    msg: Message,
+    mut profile: Profile,
+    pool: PgPool,
+) -> HandlerResult {
+    let Some(text) = msg.text() else {
+        prompt_language_selection(&bot, msg.chat.id).await?;
+        return Ok(());
+    };
+
+    let Some(lang) = Lang::from_text(text) else {
+        prompt_language_selection(&bot, msg.chat.id).await?;
+        return Ok(());
+    };
+
+    profile.language_code = Some(lang.as_db_code().to_owned());
+
+    let complete_profile = match CompleteProfile::try_from(&profile) {
+        Ok(profile) => profile,
+        Err(error) => {
+            log::warn!(
+                "Unable to update language preference for user {:?}: {}",
+                profile.telegram_user_id,
+                error
+            );
+            move_to_main_menu(&bot, &dialogue, msg.chat.id, profile).await?;
+            return Ok(());
+        }
+    };
+
+    save_profile(&pool, &complete_profile).await?;
+    move_to_main_menu(&bot, &dialogue, msg.chat.id, profile).await?;
 
     Ok(())
 }
@@ -519,4 +578,48 @@ async fn show_no_new_likes_and_return_to_menu(
 enum IncomingLikeTarget {
     IncomingLike(ProfileRow),
     PendingMutualMatch(ProfileRow),
+}
+
+async fn handle_main_menu_action(
+    bot: &Bot,
+    dialogue: &MyDialogue,
+    msg: &Message,
+    profile: Profile,
+    pool: &PgPool,
+    action: MainMenuAction,
+) -> HandlerResult {
+    match action {
+        MainMenuAction::ViewProfiles => {
+            let Some(sender) = require_sender(bot, msg).await? else {
+                return Ok(());
+            };
+
+            activate_profile(pool, sender.telegram_user_id).await?;
+            show_next_profile_or_menu(bot, dialogue, msg, profile, pool).await?;
+        }
+        MainMenuAction::MyProfile => {
+            send_profile(bot, msg.chat.id, &profile, None, None, None).await?;
+            move_to_edit_menu(bot, dialogue, msg.chat.id, profile).await?;
+        }
+        MainMenuAction::Settings => {
+            move_to_settings_menu(bot, dialogue, msg.chat.id, profile).await?;
+        }
+        MainMenuAction::DeactivateProfile => {
+            let Some(sender) = require_sender(bot, msg).await? else {
+                return Ok(());
+            };
+
+            deactivate_and_return_to_menu(
+                bot,
+                dialogue,
+                msg.chat.id,
+                sender.telegram_user_id,
+                profile,
+                pool,
+            )
+            .await?;
+        }
+    }
+
+    Ok(())
 }

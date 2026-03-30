@@ -6,7 +6,7 @@ use crate::bot::i18n::TextKey;
 use crate::bot::keyboards::{
     make_edit_profile_keyboard, make_gender_keyboard, make_incoming_like_keyboard,
     make_language_keyboard, make_main_menu_keyboard, make_profile_action_keyboard,
-    make_profile_confirmation_keyboard,
+    make_profile_confirmation_keyboard, make_settings_keyboard,
 };
 use crate::db::profile_repository::ProfileRow;
 use crate::models::Profile;
@@ -105,7 +105,19 @@ pub async fn show_edit_menu(
     lang: Lang,
 ) -> Result<(), teloxide::RequestError> {
     bot.send_message(chat_id, lang.text(TextKey::EditMenuText))
-        .reply_markup(make_edit_profile_keyboard())
+        .reply_markup(make_edit_profile_keyboard(lang))
+        .await?;
+
+    Ok(())
+}
+
+pub async fn show_settings_menu(
+    bot: &Bot,
+    chat_id: ChatId,
+    lang: Lang,
+) -> Result<(), teloxide::RequestError> {
+    bot.send_message(chat_id, lang.text(TextKey::SettingsMenuText))
+        .reply_markup(make_settings_keyboard(lang))
         .await?;
 
     Ok(())
@@ -117,7 +129,7 @@ pub async fn show_main_menu(
     lang: Lang,
 ) -> Result<(), teloxide::RequestError> {
     bot.send_message(chat_id, lang.text(TextKey::MainMenuText))
-        .reply_markup(make_main_menu_keyboard())
+        .reply_markup(make_main_menu_keyboard(lang))
         .await?;
 
     Ok(())
@@ -215,6 +227,20 @@ pub async fn move_to_edit_menu(
 
     show_edit_menu(bot, chat_id, lang).await?;
     dialogue.update(State::EditMenu { profile }).await?;
+
+    Ok(())
+}
+
+pub async fn move_to_settings_menu(
+    bot: &Bot,
+    dialogue: &MyDialogue,
+    chat_id: ChatId,
+    profile: Profile,
+) -> HandlerResult {
+    let lang = profile_lang(&profile);
+
+    show_settings_menu(bot, chat_id, lang).await?;
+    dialogue.update(State::SettingsMenu { profile }).await?;
 
     Ok(())
 }

@@ -14,6 +14,8 @@ pub struct ProfileRow {
     pub location: String,
     pub description: String,
     pub photo_file_id: String,
+    pub latitude: f64,
+    pub longitude: f64,
 }
 
 impl ProfileRow {
@@ -30,6 +32,8 @@ impl ProfileRow {
             location: Some(self.location.clone()),
             description: Some(self.description.clone()),
             photo: Some(self.photo_file_id.clone()),
+            latitude: Some(self.latitude.clone()),
+            longitude: Some(self.longitude.clone()),
         }
     }
 }
@@ -48,9 +52,11 @@ pub async fn save_profile(pool: &PgPool, profile: &CompleteProfile) -> Result<()
             age,
             location,
             description,
-            photo_file_id
+            photo_file_id,
+            latitude,
+            longitude
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,$12,$13)
         ON CONFLICT (telegram_user_id)
         DO UPDATE SET
             chat_id = EXCLUDED.chat_id,
@@ -62,7 +68,9 @@ pub async fn save_profile(pool: &PgPool, profile: &CompleteProfile) -> Result<()
             age = EXCLUDED.age,
             location = EXCLUDED.location,
             description = EXCLUDED.description,
-            photo_file_id = EXCLUDED.photo_file_id
+            photo_file_id = EXCLUDED.photo_file_id,
+            latitude = EXCLUDED.latitude,
+            longitude = EXCLUDED.longitude
         "#,
     )
     .bind(profile.telegram_user_id)
@@ -76,6 +84,8 @@ pub async fn save_profile(pool: &PgPool, profile: &CompleteProfile) -> Result<()
     .bind(&profile.location)
     .bind(&profile.description)
     .bind(&profile.photo)
+    .bind(profile.latitude)
+    .bind(profile.longitude)
     .execute(pool)
     .await?;
 
@@ -99,7 +109,9 @@ pub async fn get_next_profile_for_user(
             p.age,
             p.location,
             p.description,
-            p.photo_file_id
+            p.photo_file_id,
+            p.latitude,
+            p.longitude
         FROM profiles p
         JOIN profiles me
             ON me.telegram_user_id = $1
@@ -108,6 +120,8 @@ pub async fn get_next_profile_for_user(
           AND p.looking_for = me.gender
           AND p.is_active = TRUE
           AND me.is_active = TRUE
+          AND p.latitude IS NOT NULL
+          AND p.longitude IS NOT NULL
           AND NOT EXISTS (
               SELECT 1
               FROM swipes s
@@ -115,7 +129,22 @@ pub async fn get_next_profile_for_user(
                 AND s.to_user_id = p.telegram_user_id
                 AND s.available_again_at > NOW()
           )
-        ORDER BY p.id DESC
+        ORDER BY
+          CASE
+              WHEN me.latitude IS NULL OR me.longitude IS NULL THEN NULL
+              ELSE 6371.0 * ACOS(
+                  LEAST(
+                      1.0,
+                      GREATEST(
+                          -1.0,
+                          COS(RADIANS(me.latitude)) * COS(RADIANS(p.latitude)) *
+                          COS(RADIANS(p.longitude) - RADIANS(me.longitude)) +
+                          SIN(RADIANS(me.latitude)) * SIN(RADIANS(p.latitude))
+                      )
+                  )
+              )
+          END ASC NULLS LAST,
+          p.id DESC
         LIMIT 1
         "#,
     )
@@ -141,7 +170,9 @@ pub async fn get_profile_by_user_id(
             age,
             location,
             description,
-            photo_file_id
+            photo_file_id,
+            latitude,
+            longitude
         FROM profiles
         WHERE telegram_user_id = $1
         LIMIT 1

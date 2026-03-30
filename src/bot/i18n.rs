@@ -16,13 +16,19 @@ pub enum TextKey {
     UseKeyboardToConfirm,
     SaveProfile,
     EditProfile,
+    EditProfileMenuAction,
     NonEmptyName,
     NonEmptyBio,
     SendPhotoMessage,
+    SkipInput,
+    KeepPreviousPhoto,
     MainMenuText,
     EditMenuText,
+    SettingsMenuText,
     ViewProfiles,
     MyProfile,
+    Settings,
+    ChangeLanguage,
     DeactivateProfile,
     BackToMainMenu,
     ChangePhoto,
@@ -39,6 +45,7 @@ pub enum TextKey {
     Female,
     Like,
     Skip,
+    SendLocationButton,
 }
 
 impl Lang {
@@ -63,17 +70,19 @@ impl Lang {
                 }
                 TextKey::SaveProfile => "Save profile",
                 TextKey::EditProfile => "No, edit profile",
+                TextKey::EditProfileMenuAction => "Edit profile",
                 TextKey::NonEmptyName => "Please send a non-empty name.",
                 TextKey::NonEmptyBio => "Please send a non-empty bio.",
                 TextKey::SendPhotoMessage => "Send a photo message, not a file.",
-                TextKey::MainMenuText => {
-                    "1. View profiles\n2. My profile\n3. I don't want to show my profile"
-                }
-                TextKey::EditMenuText => {
-                    "1. Edit profile\n2. Change photo\n3. Change bio\n4. Back to main menu"
-                }
+                TextKey::SkipInput => "Skip",
+                TextKey::KeepPreviousPhoto => "Keep previous photo",
+                TextKey::MainMenuText => "Menu:",
+                TextKey::EditMenuText => "Profile:",
+                TextKey::SettingsMenuText => "Settings:",
                 TextKey::ViewProfiles => "View profiles",
                 TextKey::MyProfile => "My profile",
+                TextKey::Settings => "Settings",
+                TextKey::ChangeLanguage => "Change language",
                 TextKey::DeactivateProfile => "I don't want to show my profile",
                 TextKey::BackToMainMenu => "Back to main menu",
                 TextKey::ChangePhoto => "Change photo",
@@ -98,6 +107,7 @@ impl Lang {
                 TextKey::Female => "Female",
                 TextKey::Like => "❤️",
                 TextKey::Skip => "👎",
+                TextKey::SendLocationButton => "📍 Send location",
             },
             Lang::Sk => match key {
                 TextKey::Welcome => {
@@ -118,17 +128,19 @@ impl Lang {
                 }
                 TextKey::SaveProfile => "Uložiť profil",
                 TextKey::EditProfile => "Nie, upraviť profil",
+                TextKey::EditProfileMenuAction => "Upraviť profil",
                 TextKey::NonEmptyName => "Pošli neprázdne meno.",
                 TextKey::NonEmptyBio => "Pošli neprázdny popis.",
                 TextKey::SendPhotoMessage => "Pošli fotku ako správu, nie ako súbor.",
-                TextKey::MainMenuText => {
-                    "1. Prezerať profily\n2. Môj profil\n3. Nechcem zobrazovať svoj profil"
-                }
-                TextKey::EditMenuText => {
-                    "1. Upraviť profil\n2. Zmeniť fotku\n3. Zmeniť popis\n4. Späť do hlavného menu"
-                }
+                TextKey::SkipInput => "Preskočiť",
+                TextKey::KeepPreviousPhoto => "Nechať predchádzajúcu fotku",
+                TextKey::MainMenuText => "Menu:",
+                TextKey::EditMenuText => "Profil:",
+                TextKey::SettingsMenuText => "Nastavenia:",
                 TextKey::ViewProfiles => "Prezerať profily",
                 TextKey::MyProfile => "Môj profil",
+                TextKey::Settings => "Nastavenia",
+                TextKey::ChangeLanguage => "Zmeniť jazyk",
                 TextKey::DeactivateProfile => "Nechcem zobrazovať svoj profil",
                 TextKey::BackToMainMenu => "Späť do hlavného menu",
                 TextKey::ChangePhoto => "Zmeniť fotku",
@@ -151,6 +163,7 @@ impl Lang {
                 TextKey::Female => "Žena",
                 TextKey::Like => "❤️",
                 TextKey::Skip => "👎",
+                TextKey::SendLocationButton => "📍 Zdieľať moju polohu",
             },
             Lang::Uk => match key {
                 TextKey::Welcome => {
@@ -171,17 +184,19 @@ impl Lang {
                 }
                 TextKey::SaveProfile => "Зберегти профіль",
                 TextKey::EditProfile => "Ні, редагувати профіль",
+                TextKey::EditProfileMenuAction => "Редагувати профіль",
                 TextKey::NonEmptyName => "Надішли непорожнє ім’я.",
                 TextKey::NonEmptyBio => "Надішли непорожній опис.",
                 TextKey::SendPhotoMessage => "Надішли фото як повідомлення, а не як файл.",
-                TextKey::MainMenuText => {
-                    "1. Переглядати профілі\n2. Мій профіль\n3. Я не хочу показувати свій профіль"
-                }
-                TextKey::EditMenuText => {
-                    "1. Редагувати профіль\n2. Змінити фото\n3. Змінити опис\n4. Назад у головне меню"
-                }
+                TextKey::SkipInput => "Пропустити",
+                TextKey::KeepPreviousPhoto => "Лишити попереднє",
+                TextKey::MainMenuText => "Меню:",
+                TextKey::EditMenuText => "Профіль:",
+                TextKey::SettingsMenuText => "Налаштування:",
                 TextKey::ViewProfiles => "Переглядати профілі",
                 TextKey::MyProfile => "Мій профіль",
+                TextKey::Settings => "Налаштування",
+                TextKey::ChangeLanguage => "Змінити мову",
                 TextKey::DeactivateProfile => "Я не хочу показувати свій профіль",
                 TextKey::BackToMainMenu => "Назад у головне меню",
                 TextKey::ChangePhoto => "Змінити фото",
@@ -206,6 +221,7 @@ impl Lang {
                 TextKey::Female => "Жінка",
                 TextKey::Like => "❤️",
                 TextKey::Skip => "👎",
+                TextKey::SendLocationButton => "📍 Поділитися моїм місцезнаходженням",
             },
         }
     }

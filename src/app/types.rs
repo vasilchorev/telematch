@@ -78,6 +78,10 @@ pub enum State {
     WaitingForLocation {
         draft: Profile,
     },
+    WaitingForLocationChoice {
+        draft: Profile,
+        candidates: Vec<crate::geocoding::CityCandidate>,
+    },
     WaitingForDescription {
         draft: Profile,
     },
@@ -97,6 +101,12 @@ pub enum State {
         profile: Profile,
     },
     EditMenu {
+        profile: Profile,
+    },
+    SettingsMenu {
+        profile: Profile,
+    },
+    WaitingForLanguagePreference {
         profile: Profile,
     },
     AwaitingIncomingLikeDecision {
@@ -169,6 +179,36 @@ impl EditMenuAction {
             "2" => Some(Self::ChangePhoto),
             "3" => Some(Self::ChangeBio),
             "4" => Some(Self::BackToMainMenu),
+            _ if matches_text_key_in_any_lang(text, TextKey::EditProfileMenuAction) => {
+                Some(Self::EditProfile)
+            }
+            _ if matches_text_key_in_any_lang(text, TextKey::ChangePhoto) => {
+                Some(Self::ChangePhoto)
+            }
+            _ if matches_text_key_in_any_lang(text, TextKey::ChangeBio) => Some(Self::ChangeBio),
+            _ if matches_text_key_in_any_lang(text, TextKey::BackToMainMenu) => {
+                Some(Self::BackToMainMenu)
+            }
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsAction {
+    ChangeLanguage,
+    BackToMainMenu,
+}
+
+impl SettingsAction {
+    pub fn parse(text: &str) -> Option<Self> {
+        match text.trim() {
+            _ if matches_text_key_in_any_lang(text, TextKey::ChangeLanguage) => {
+                Some(Self::ChangeLanguage)
+            }
+            _ if matches_text_key_in_any_lang(text, TextKey::BackToMainMenu) => {
+                Some(Self::BackToMainMenu)
+            }
             _ => None,
         }
     }
@@ -178,6 +218,7 @@ impl EditMenuAction {
 pub enum MainMenuAction {
     ViewProfiles,
     MyProfile,
+    Settings,
     DeactivateProfile,
 }
 
@@ -187,6 +228,14 @@ impl MainMenuAction {
             "1" => Some(Self::ViewProfiles),
             "2" => Some(Self::MyProfile),
             "3" => Some(Self::DeactivateProfile),
+            _ if matches_text_key_in_any_lang(text, TextKey::ViewProfiles) => {
+                Some(Self::ViewProfiles)
+            }
+            _ if matches_text_key_in_any_lang(text, TextKey::MyProfile) => Some(Self::MyProfile),
+            _ if matches_text_key_in_any_lang(text, TextKey::Settings) => Some(Self::Settings),
+            _ if matches_text_key_in_any_lang(text, TextKey::DeactivateProfile) => {
+                Some(Self::DeactivateProfile)
+            }
             _ => None,
         }
     }

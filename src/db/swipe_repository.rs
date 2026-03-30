@@ -75,7 +75,9 @@ pub async fn get_incoming_like_for_user(
             p.age,
             p.location,
             p.description,
-            p.photo_file_id
+            p.photo_file_id,
+            p.latitude,
+            p.longitude
         FROM swipes s
         JOIN profiles p
           ON p.telegram_user_id = s.from_user_id
@@ -115,7 +117,9 @@ pub async fn get_pending_mutual_match_for_user(
             p.age,
             p.location,
             p.description,
-            p.photo_file_id
+            p.photo_file_id,
+            p.latitude,
+            p.longitude
         FROM swipes s1
         JOIN swipes s2
           ON s1.from_user_id = s2.to_user_id

@@ -17,4 +17,5 @@ sqlx = { version = "0.8", features = [
     "migrate"
 ] }
 
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "query"] }
 serde = { version = "1", features = ["derive"] }
