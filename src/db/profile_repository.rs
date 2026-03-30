@@ -143,7 +143,7 @@ pub async fn get_next_profile_for_user(
                       )
                   )
               )
-          END ASC NULLS LAST,
+          END NULLS LAST,
           p.id DESC
         LIMIT 1
         "#,
