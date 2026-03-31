@@ -1,4 +1,4 @@
-use crate::models::{CompleteProfile, Gender, Profile};
+use crate::domain::{CompleteProfile, Gender, Profile};
 use sqlx::{FromRow, PgPool};
 
 #[derive(Debug, Clone, FromRow)]
@@ -32,8 +32,8 @@ impl ProfileRow {
             location: Some(self.location.clone()),
             description: Some(self.description.clone()),
             photo: Some(self.photo_file_id.clone()),
-            latitude: Some(self.latitude.clone()),
-            longitude: Some(self.longitude.clone()),
+            latitude: Some(self.latitude),
+            longitude: Some(self.longitude),
         }
     }
 }

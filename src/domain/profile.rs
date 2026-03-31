@@ -1,7 +1,10 @@
-use crate::Lang;
-use crate::bot::i18n::TextKey;
+use crate::Language;
+use crate::telegram::i18n::TextKey;
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
+use std::ops::RangeInclusive;
+
+const VALID_AGE_RANGE: RangeInclusive<u8> = 1..=100;
 
 #[derive(Debug, Clone, Default)]
 pub struct Profile {
@@ -60,32 +63,33 @@ impl TryFrom<&Profile> for CompleteProfile {
     type Error = ProfileValidationError;
 
     fn try_from(profile: &Profile) -> Result<Self, Self::Error> {
-        let age = profile.age.ok_or(ProfileValidationError::MissingAge)?;
-        if !(1..=100).contains(&age) {
+        let age = required_value(profile.age, ProfileValidationError::MissingAge)?;
+        if !VALID_AGE_RANGE.contains(&age) {
             return Err(ProfileValidationError::InvalidAge(age));
         }
 
         Ok(Self {
-            telegram_user_id: profile
-                .telegram_user_id
-                .ok_or(ProfileValidationError::MissingTelegramUserId)?,
-            chat_id: profile
-                .chat_id
-                .ok_or(ProfileValidationError::MissingChatId)?,
+            telegram_user_id: required_value(
+                profile.telegram_user_id,
+                ProfileValidationError::MissingTelegramUserId,
+            )?,
+            chat_id: required_value(profile.chat_id, ProfileValidationError::MissingChatId)?,
             username: profile.username.clone(),
-            language_code: required_text(
+            language_code: required_non_empty_text(
                 profile.language_code.as_deref(),
                 ProfileValidationError::MissingLanguageCode,
             )?,
-            name: required_text(profile.name.as_deref(), ProfileValidationError::MissingName)?,
-            gender: profile
-                .gender
-                .ok_or(ProfileValidationError::MissingGender)?,
-            looking_for: profile
-                .looking_for
-                .ok_or(ProfileValidationError::MissingLookingFor)?,
+            name: required_non_empty_text(
+                profile.name.as_deref(),
+                ProfileValidationError::MissingName,
+            )?,
+            gender: required_value(profile.gender, ProfileValidationError::MissingGender)?,
+            looking_for: required_value(
+                profile.looking_for,
+                ProfileValidationError::MissingLookingFor,
+            )?,
             age,
-            location: required_text(
+            location: required_non_empty_text(
                 profile.location.as_deref(),
                 ProfileValidationError::MissingLocation,
             )?,
@@ -95,17 +99,24 @@ impl TryFrom<&Profile> for CompleteProfile {
                 .map(str::trim)
                 .unwrap_or_default()
                 .to_owned(),
-            photo: required_text(
+            photo: required_non_empty_text(
                 profile.photo.as_deref(),
                 ProfileValidationError::MissingPhoto,
             )?,
-            latitude: profile.latitude.ok_or(ProfileValidationError::MissingLocation)?,
-            longitude: profile.longitude.ok_or(ProfileValidationError::MissingLocation)?,
+            latitude: required_value(profile.latitude, ProfileValidationError::MissingLocation)?,
+            longitude: required_value(profile.longitude, ProfileValidationError::MissingLocation)?,
         })
     }
 }
 
-fn required_text(
+fn required_value<T>(
+    value: Option<T>,
+    error: ProfileValidationError,
+) -> Result<T, ProfileValidationError> {
+    value.ok_or(error)
+}
+
+fn required_non_empty_text(
     value: Option<&str>,
     error: ProfileValidationError,
 ) -> Result<String, ProfileValidationError> {
@@ -156,15 +167,11 @@ pub enum Gender {
 }
 
 impl Gender {
-    pub fn from_text(text: &str, lang: Lang) -> Option<Self> {
-        let text = text.trim();
-
-        if text == lang.text(TextKey::Male) {
-            Some(Self::Male)
-        } else if text == lang.text(TextKey::Female) {
-            Some(Self::Female)
-        } else {
-            None
+    pub fn from_text(text: &str, language: Language) -> Option<Self> {
+        match text.trim() {
+            value if value == language.text(TextKey::Male) => Some(Self::Male),
+            value if value == language.text(TextKey::Female) => Some(Self::Female),
+            _ => None,
         }
     }
 
@@ -181,5 +188,52 @@ impl Gender {
             Self::Male => "M",
             Self::Female => "F",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn valid_profile() -> Profile {
+        Profile {
+            telegram_user_id: Some(1),
+            chat_id: Some(2),
+            username: Some("user".to_owned()),
+            language_code: Some("en".to_owned()),
+            name: Some("Alice".to_owned()),
+            gender: Some(Gender::Female),
+            looking_for: Some(Gender::Male),
+            age: Some(25),
+            location: Some("Bratislava".to_owned()),
+            description: Some("  Bio  ".to_owned()),
+            photo: Some("photo-id".to_owned()),
+            latitude: Some(48.1486),
+            longitude: Some(17.1077),
+        }
+    }
+
+    #[test]
+    fn complete_profile_trims_required_text_fields() {
+        let mut profile = valid_profile();
+        profile.name = Some("  Alice  ".to_owned());
+        profile.location = Some("  Bratislava  ".to_owned());
+
+        let complete = CompleteProfile::try_from(&profile).expect("profile should be valid");
+
+        assert_eq!(complete.name, "Alice");
+        assert_eq!(complete.location, "Bratislava");
+        assert_eq!(complete.description, "Bio");
+    }
+
+    #[test]
+    fn complete_profile_rejects_invalid_age() {
+        let mut profile = valid_profile();
+        profile.age = Some(0);
+
+        assert_eq!(
+            CompleteProfile::try_from(&profile),
+            Err(ProfileValidationError::InvalidAge(0))
+        );
     }
 }

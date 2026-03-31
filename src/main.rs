@@ -1,12 +1,12 @@
 mod app;
-mod bot;
 mod db;
-mod models;
-mod geocoding;
+mod domain;
+mod services;
+mod telegram;
 
-pub use app::Lang;
+pub use app::{AppResult, Language};
 
 #[tokio::main]
-async fn main() {
-    app::run().await;
+async fn main() -> AppResult<()> {
+    app::run().await
 }

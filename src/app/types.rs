@@ -1,29 +1,30 @@
-use crate::bot::i18n::TextKey;
-use crate::bot::keyboards::{
+use crate::domain::Profile;
+use crate::telegram::i18n::TextKey;
+use crate::telegram::keyboards::{
     EN_INCOMING_LIKE_SHOW_BUTTON_TEXT, EN_INCOMING_LIKE_STOP_BUTTON_TEXT,
     ENGLISH_LANGUAGE_BUTTON_TEXT, SK_INCOMING_LIKE_SHOW_BUTTON_TEXT,
     SK_INCOMING_LIKE_STOP_BUTTON_TEXT, SLOVAK_LANGUAGE_BUTTON_TEXT,
     UK_INCOMING_LIKE_SHOW_BUTTON_TEXT, UK_INCOMING_LIKE_STOP_BUTTON_TEXT,
     UKRAINIAN_LANGUAGE_BUTTON_TEXT,
 };
-use crate::models::Profile;
 use teloxide::dispatching::dialogue::InMemStorage;
 use teloxide::prelude::Dialogue;
 
-pub type MyDialogue = Dialogue<State, InMemStorage<State>>;
-pub type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
+pub type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+pub type AppDialogue = Dialogue<State, InMemStorage<State>>;
+pub type HandlerResult = AppResult<()>;
 
 pub const LANGUAGE_PROMPT: &str = "Choose language / Vyber jazyk / Обери мову";
 pub const REVEAL_SPINNER_TEXT: &str = "✨🔍";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Lang {
+pub enum Language {
     En,
     Sk,
     Uk,
 }
 
-impl Lang {
+impl Language {
     pub fn from_text(text: &str) -> Option<Self> {
         match text.trim() {
             ENGLISH_LANGUAGE_BUTTON_TEXT => Some(Self::En),
@@ -50,12 +51,12 @@ impl Lang {
     }
 }
 
-pub fn profile_lang(profile: &Profile) -> Lang {
+pub fn profile_language(profile: &Profile) -> Language {
     profile
         .language_code
         .as_deref()
-        .map(Lang::from_db_code)
-        .unwrap_or(Lang::En)
+        .map(Language::from_db_code)
+        .unwrap_or(Language::En)
 }
 
 #[derive(Clone, Default)]
@@ -80,7 +81,7 @@ pub enum State {
     },
     WaitingForLocationChoice {
         draft: Profile,
-        candidates: Vec<crate::geocoding::CityCandidate>,
+        candidates: Vec<crate::services::CityCandidate>,
     },
     WaitingForDescription {
         draft: Profile,
@@ -111,12 +112,14 @@ pub enum State {
     },
     AwaitingIncomingLikeDecision {
         profile: Profile,
-        liked_you_user_id: i64,
+        incoming_like_user_id: i64,
+        pending_like_count: i64,
+        target_kind: IncomingLikeTargetKind,
     },
     AwaitingProfileAction {
         profile: Profile,
-        shown_profile_user_id: i64,
-        return_to_menu: bool,
+        displayed_profile_user_id: i64,
+        return_to_main_menu: bool,
     },
 }
 
@@ -134,9 +137,9 @@ pub enum ConfirmationAction {
 
 impl ConfirmationAction {
     pub fn parse(text: &str) -> Option<Self> {
-        if matches_text_key_in_any_lang(text, TextKey::SaveProfile) {
+        if matches_text_key_in_any_language(text, TextKey::SaveProfile) {
             Some(Self::SaveProfile)
-        } else if matches_text_key_in_any_lang(text, TextKey::EditProfile) {
+        } else if matches_text_key_in_any_language(text, TextKey::EditProfile) {
             Some(Self::EditProfile)
         } else {
             None
@@ -165,6 +168,12 @@ impl IncomingLikeDecision {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IncomingLikeTargetKind {
+    IncomingLike,
+    PendingMutualMatch,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditMenuAction {
     EditProfile,
     ChangePhoto,
@@ -179,14 +188,16 @@ impl EditMenuAction {
             "2" => Some(Self::ChangePhoto),
             "3" => Some(Self::ChangeBio),
             "4" => Some(Self::BackToMainMenu),
-            _ if matches_text_key_in_any_lang(text, TextKey::EditProfileMenuAction) => {
+            _ if matches_text_key_in_any_language(text, TextKey::EditProfileMenuAction) => {
                 Some(Self::EditProfile)
             }
-            _ if matches_text_key_in_any_lang(text, TextKey::ChangePhoto) => {
+            _ if matches_text_key_in_any_language(text, TextKey::ChangePhoto) => {
                 Some(Self::ChangePhoto)
             }
-            _ if matches_text_key_in_any_lang(text, TextKey::ChangeBio) => Some(Self::ChangeBio),
-            _ if matches_text_key_in_any_lang(text, TextKey::BackToMainMenu) => {
+            _ if matches_text_key_in_any_language(text, TextKey::ChangeBio) => {
+                Some(Self::ChangeBio)
+            }
+            _ if matches_text_key_in_any_language(text, TextKey::BackToMainMenu) => {
                 Some(Self::BackToMainMenu)
             }
             _ => None,
@@ -203,10 +214,10 @@ pub enum SettingsAction {
 impl SettingsAction {
     pub fn parse(text: &str) -> Option<Self> {
         match text.trim() {
-            _ if matches_text_key_in_any_lang(text, TextKey::ChangeLanguage) => {
+            _ if matches_text_key_in_any_language(text, TextKey::ChangeLanguage) => {
                 Some(Self::ChangeLanguage)
             }
-            _ if matches_text_key_in_any_lang(text, TextKey::BackToMainMenu) => {
+            _ if matches_text_key_in_any_language(text, TextKey::BackToMainMenu) => {
                 Some(Self::BackToMainMenu)
             }
             _ => None,
@@ -228,12 +239,14 @@ impl MainMenuAction {
             "1" => Some(Self::ViewProfiles),
             "2" => Some(Self::MyProfile),
             "3" => Some(Self::DeactivateProfile),
-            _ if matches_text_key_in_any_lang(text, TextKey::ViewProfiles) => {
+            _ if matches_text_key_in_any_language(text, TextKey::ViewProfiles) => {
                 Some(Self::ViewProfiles)
             }
-            _ if matches_text_key_in_any_lang(text, TextKey::MyProfile) => Some(Self::MyProfile),
-            _ if matches_text_key_in_any_lang(text, TextKey::Settings) => Some(Self::Settings),
-            _ if matches_text_key_in_any_lang(text, TextKey::DeactivateProfile) => {
+            _ if matches_text_key_in_any_language(text, TextKey::MyProfile) => {
+                Some(Self::MyProfile)
+            }
+            _ if matches_text_key_in_any_language(text, TextKey::Settings) => Some(Self::Settings),
+            _ if matches_text_key_in_any_language(text, TextKey::DeactivateProfile) => {
                 Some(Self::DeactivateProfile)
             }
             _ => None,
@@ -249,9 +262,9 @@ pub enum SwipeDecision {
 
 impl SwipeDecision {
     pub fn parse(text: &str) -> Option<Self> {
-        if matches_text_key_in_any_lang(text, TextKey::Like) {
+        if matches_text_key_in_any_language(text, TextKey::Like) {
             Some(Self::Like)
-        } else if matches_text_key_in_any_lang(text, TextKey::Skip) {
+        } else if matches_text_key_in_any_language(text, TextKey::Skip) {
             Some(Self::Skip)
         } else {
             None
@@ -259,10 +272,10 @@ impl SwipeDecision {
     }
 }
 
-fn matches_text_key_in_any_lang(text: &str, key: TextKey) -> bool {
+fn matches_text_key_in_any_language(text: &str, key: TextKey) -> bool {
     let text = text.trim();
 
-    [Lang::En, Lang::Sk, Lang::Uk]
+    [Language::En, Language::Sk, Language::Uk]
         .into_iter()
-        .any(|lang| text == lang.text(key))
+        .any(|language| text == language.text(key))
 }

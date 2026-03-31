@@ -1,5 +1,5 @@
-use crate::Lang;
-use crate::bot::i18n::TextKey;
+use crate::Language;
+use crate::telegram::i18n::TextKey;
 use teloxide::types::{ButtonRequest, KeyboardButton, KeyboardMarkup};
 
 pub const ENGLISH_LANGUAGE_BUTTON_TEXT: &str = "🇬🇧 English";
@@ -15,56 +15,56 @@ pub const SK_INCOMING_LIKE_STOP_BUTTON_TEXT: &str = "👎 Nechcem ďalej pozera�
 pub const UK_INCOMING_LIKE_SHOW_BUTTON_TEXT: &str = "👍 Показати";
 pub const UK_INCOMING_LIKE_STOP_BUTTON_TEXT: &str = "👎 Я більше не хочу нікого дивитись";
 
-pub fn make_main_menu_keyboard(lang: Lang) -> KeyboardMarkup {
+pub fn make_main_menu_keyboard(language: Language) -> KeyboardMarkup {
     KeyboardMarkup::new(vec![
         vec![
-            KeyboardButton::new(lang.text(TextKey::ViewProfiles)),
-            KeyboardButton::new(lang.text(TextKey::MyProfile)),
+            KeyboardButton::new(language.text(TextKey::ViewProfiles)),
+            KeyboardButton::new(language.text(TextKey::MyProfile)),
         ],
         vec![
-            KeyboardButton::new(lang.text(TextKey::DeactivateProfile)),
-            KeyboardButton::new(lang.text(TextKey::Settings)),
+            KeyboardButton::new(language.text(TextKey::DeactivateProfile)),
+            KeyboardButton::new(language.text(TextKey::Settings)),
         ],
     ])
     .resize_keyboard()
 }
 
-pub fn make_gender_keyboard(lang: Lang) -> KeyboardMarkup {
+pub fn make_gender_keyboard(language: Language) -> KeyboardMarkup {
     KeyboardMarkup::new(vec![vec![
-        KeyboardButton::new(lang.text(TextKey::Male)),
-        KeyboardButton::new(lang.text(TextKey::Female)),
+        KeyboardButton::new(language.text(TextKey::Male)),
+        KeyboardButton::new(language.text(TextKey::Female)),
     ]])
     .resize_keyboard()
     .one_time_keyboard()
 }
 
-pub fn make_profile_confirmation_keyboard(lang: Lang) -> KeyboardMarkup {
+pub fn make_profile_confirmation_keyboard(language: Language) -> KeyboardMarkup {
     KeyboardMarkup::new(vec![vec![
-        KeyboardButton::new(lang.text(TextKey::SaveProfile)),
-        KeyboardButton::new(lang.text(TextKey::EditProfile)),
+        KeyboardButton::new(language.text(TextKey::SaveProfile)),
+        KeyboardButton::new(language.text(TextKey::EditProfile)),
     ]])
     .resize_keyboard()
     .one_time_keyboard()
 }
 
-pub fn make_edit_profile_keyboard(lang: Lang) -> KeyboardMarkup {
+pub fn make_edit_profile_keyboard(language: Language) -> KeyboardMarkup {
     KeyboardMarkup::new(vec![
         vec![
-            KeyboardButton::new(lang.text(TextKey::EditProfileMenuAction)),
-            KeyboardButton::new(lang.text(TextKey::ChangePhoto)),
+            KeyboardButton::new(language.text(TextKey::EditProfileMenuAction)),
+            KeyboardButton::new(language.text(TextKey::ChangePhoto)),
         ],
         vec![
-            KeyboardButton::new(lang.text(TextKey::ChangeBio)),
-            KeyboardButton::new(lang.text(TextKey::BackToMainMenu)),
+            KeyboardButton::new(language.text(TextKey::ChangeBio)),
+            KeyboardButton::new(language.text(TextKey::BackToMainMenu)),
         ],
     ])
     .resize_keyboard()
 }
 
-pub fn make_settings_keyboard(lang: Lang) -> KeyboardMarkup {
+pub fn make_settings_keyboard(language: Language) -> KeyboardMarkup {
     KeyboardMarkup::new(vec![
-        vec![KeyboardButton::new(lang.text(TextKey::ChangeLanguage))],
-        vec![KeyboardButton::new(lang.text(TextKey::BackToMainMenu))],
+        vec![KeyboardButton::new(language.text(TextKey::ChangeLanguage))],
+        vec![KeyboardButton::new(language.text(TextKey::BackToMainMenu))],
     ])
     .resize_keyboard()
 }
@@ -88,17 +88,17 @@ pub fn make_language_keyboard() -> KeyboardMarkup {
     .one_time_keyboard()
 }
 
-pub fn make_incoming_like_keyboard(lang: Lang) -> KeyboardMarkup {
-    let (show_text, stop_text) = match lang {
-        Lang::En => (
+pub fn make_incoming_like_keyboard(language: Language) -> KeyboardMarkup {
+    let (show_text, stop_text) = match language {
+        Language::En => (
             EN_INCOMING_LIKE_SHOW_BUTTON_TEXT,
             EN_INCOMING_LIKE_STOP_BUTTON_TEXT,
         ),
-        Lang::Sk => (
+        Language::Sk => (
             SK_INCOMING_LIKE_SHOW_BUTTON_TEXT,
             SK_INCOMING_LIKE_STOP_BUTTON_TEXT,
         ),
-        Lang::Uk => (
+        Language::Uk => (
             UK_INCOMING_LIKE_SHOW_BUTTON_TEXT,
             UK_INCOMING_LIKE_STOP_BUTTON_TEXT,
         ),
@@ -116,7 +116,9 @@ pub fn make_location_choice_keyboard(count: usize) -> KeyboardMarkup {
         .map(|i| KeyboardButton::new(i.to_string()))
         .collect::<Vec<_>>();
 
-    KeyboardMarkup::new(vec![row]).resize_keyboard().one_time_keyboard()
+    KeyboardMarkup::new(vec![row])
+        .resize_keyboard()
+        .one_time_keyboard()
 }
 
 pub fn make_previous_value_keyboard(text: impl Into<String>) -> KeyboardMarkup {
@@ -125,23 +127,29 @@ pub fn make_previous_value_keyboard(text: impl Into<String>) -> KeyboardMarkup {
         .one_time_keyboard()
 }
 
-pub fn make_skip_keyboard(lang: Lang) -> KeyboardMarkup {
-    make_previous_value_keyboard(lang.text(TextKey::SkipInput))
+pub fn make_skip_keyboard(language: Language) -> KeyboardMarkup {
+    make_previous_value_keyboard(language.text(TextKey::SkipInput))
 }
 
-pub fn make_keep_previous_photo_keyboard(lang: Lang) -> KeyboardMarkup {
-    make_previous_value_keyboard(lang.text(TextKey::KeepPreviousPhoto))
+pub fn make_keep_previous_photo_keyboard(language: Language) -> KeyboardMarkup {
+    make_previous_value_keyboard(language.text(TextKey::KeepPreviousPhoto))
 }
 
-pub fn make_location_keyboard(lang: Lang, previous_location: Option<&str>) -> KeyboardMarkup {
+pub fn make_location_keyboard(
+    language: Language,
+    previous_location: Option<&str>,
+) -> KeyboardMarkup {
     let mut rows = Vec::new();
 
-    if let Some(location) = previous_location.map(str::trim).filter(|value| !value.is_empty()) {
+    if let Some(location) = previous_location
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         rows.push(vec![KeyboardButton::new(location.to_owned())]);
     }
 
     rows.push(vec![
-        KeyboardButton::new(lang.text(TextKey::SendLocationButton))
+        KeyboardButton::new(language.text(TextKey::SendLocationButton))
             .request(ButtonRequest::Location),
     ]);
 

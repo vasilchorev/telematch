@@ -1,15 +1,15 @@
 use crate::app::types::{
-    HandlerResult, IncomingLikeDecision, LANGUAGE_PROMPT, Lang, MyDialogue, SenderInfo, State,
-    profile_lang,
-};
-use crate::bot::i18n::TextKey;
-use crate::bot::keyboards::{
-    make_edit_profile_keyboard, make_gender_keyboard, make_incoming_like_keyboard,
-    make_language_keyboard, make_main_menu_keyboard, make_profile_action_keyboard,
-    make_profile_confirmation_keyboard, make_settings_keyboard,
+    AppDialogue, HandlerResult, IncomingLikeDecision, LANGUAGE_PROMPT, Language, SenderInfo, State,
+    profile_language,
 };
 use crate::db::profile_repository::ProfileRow;
-use crate::models::Profile;
+use crate::domain::{Gender, Profile};
+use crate::telegram::i18n::TextKey;
+use crate::telegram::keyboards::{
+    make_gender_keyboard, make_incoming_like_keyboard, make_language_keyboard,
+    make_main_menu_keyboard, make_profile_action_keyboard, make_profile_confirmation_keyboard,
+    make_settings_keyboard,
+};
 use teloxide::prelude::*;
 use teloxide::types::{FileId, InputFile, KeyboardMarkup, ReplyMarkup};
 
@@ -23,7 +23,7 @@ pub fn is_start_command(msg: Message) -> bool {
         .unwrap_or(false)
 }
 
-pub async fn prompt_language_selection(
+pub async fn prompt_for_language_selection(
     bot: &Bot,
     chat_id: ChatId,
 ) -> Result<(), teloxide::RequestError> {
@@ -54,7 +54,7 @@ pub async fn require_sender(
     }))
 }
 
-pub async fn send_profile(
+pub async fn send_profile_card(
     bot: &Bot,
     chat_id: ChatId,
     profile: &Profile,
@@ -99,25 +99,13 @@ pub async fn send_profile(
     Ok(())
 }
 
-pub async fn show_edit_menu(
-    bot: &Bot,
-    chat_id: ChatId,
-    lang: Lang,
-) -> Result<(), teloxide::RequestError> {
-    bot.send_message(chat_id, lang.text(TextKey::EditMenuText))
-        .reply_markup(make_edit_profile_keyboard(lang))
-        .await?;
-
-    Ok(())
-}
-
 pub async fn show_settings_menu(
     bot: &Bot,
     chat_id: ChatId,
-    lang: Lang,
+    language: Language,
 ) -> Result<(), teloxide::RequestError> {
-    bot.send_message(chat_id, lang.text(TextKey::SettingsMenuText))
-        .reply_markup(make_settings_keyboard(lang))
+    bot.send_message(chat_id, language.text(TextKey::SettingsMenuText))
+        .reply_markup(make_settings_keyboard(language))
         .await?;
 
     Ok(())
@@ -126,68 +114,74 @@ pub async fn show_settings_menu(
 pub async fn show_main_menu(
     bot: &Bot,
     chat_id: ChatId,
-    lang: Lang,
+    language: Language,
 ) -> Result<(), teloxide::RequestError> {
-    bot.send_message(chat_id, lang.text(TextKey::MainMenuText))
-        .reply_markup(make_main_menu_keyboard(lang))
+    bot.send_message(chat_id, language.text(TextKey::MainMenuText))
+        .reply_markup(make_main_menu_keyboard(language))
         .await?;
 
     Ok(())
 }
 
-pub async fn prompt_for_profile_action(
+pub async fn prompt_for_swipe_decision(
     bot: &Bot,
     chat_id: ChatId,
-    lang: Lang,
+    language: Language,
 ) -> Result<(), teloxide::RequestError> {
-    bot.send_message(chat_id, lang.text(TextKey::LikeOrSkip))
+    bot.send_message(chat_id, language.text(TextKey::LikeOrSkip))
         .reply_markup(make_profile_action_keyboard())
         .await?;
 
     Ok(())
 }
 
-pub async fn prompt_incoming_like_decision(
+pub async fn prompt_for_incoming_like_decision(
     bot: &Bot,
     chat_id: ChatId,
-    lang: Lang,
+    profile: &Profile,
+    pending_like_count: i64,
 ) -> Result<(), teloxide::RequestError> {
-    bot.send_message(chat_id, lang.text(TextKey::SomeoneLikedYouShowQuestion))
-        .reply_markup(make_incoming_like_keyboard(lang))
-        .await?;
+    let language = profile_language(profile);
+
+    bot.send_message(
+        chat_id,
+        build_incoming_like_prompt(profile, pending_like_count),
+    )
+    .reply_markup(make_incoming_like_keyboard(language))
+    .await?;
 
     Ok(())
 }
 
-pub async fn preview_profile_for_confirmation(
+pub async fn show_profile_confirmation_preview(
     bot: &Bot,
     chat_id: ChatId,
-    lang: Lang,
-    draft: &Profile,
+    language: Language,
+    draft_profile: &Profile,
 ) -> HandlerResult {
-    send_profile(bot, chat_id, draft, None, None, None).await?;
-    bot.send_message(chat_id, lang.text(TextKey::SaveThisProfile))
-        .reply_markup(make_profile_confirmation_keyboard(lang))
+    send_profile_card(bot, chat_id, draft_profile, None, None, None).await?;
+    bot.send_message(chat_id, language.text(TextKey::SaveThisProfile))
+        .reply_markup(make_profile_confirmation_keyboard(language))
         .await?;
 
     Ok(())
 }
 
-pub async fn show_profile_for_action(
+pub async fn show_candidate_profile(
     bot: &Bot,
-    dialogue: &MyDialogue,
+    dialogue: &AppDialogue,
     chat_id: ChatId,
-    my_profile: Profile,
-    shown_profile_user_id: i64,
-    shown_profile: &Profile,
+    current_user_profile: Profile,
+    displayed_profile_user_id: i64,
+    displayed_profile: &Profile,
     header_text: Option<&str>,
     footer_text: Option<&str>,
-    return_to_menu: bool,
+    return_to_main_menu: bool,
 ) -> HandlerResult {
-    send_profile(
+    send_profile_card(
         bot,
         chat_id,
-        shown_profile,
+        displayed_profile,
         header_text,
         footer_text,
         Some(make_profile_action_keyboard().into()),
@@ -196,57 +190,49 @@ pub async fn show_profile_for_action(
 
     dialogue
         .update(State::AwaitingProfileAction {
-            profile: my_profile,
-            shown_profile_user_id,
-            return_to_menu,
+            profile: current_user_profile,
+            displayed_profile_user_id,
+            return_to_main_menu,
         })
         .await?;
 
     Ok(())
 }
 
-pub async fn move_to_main_menu(
+pub async fn transition_to_main_menu(
     bot: &Bot,
-    dialogue: &MyDialogue,
+    dialogue: &AppDialogue,
     chat_id: ChatId,
     profile: Profile,
 ) -> HandlerResult {
-    show_main_menu(bot, chat_id, profile_lang(&profile)).await?;
+    show_main_menu(bot, chat_id, profile_language(&profile)).await?;
     dialogue.update(State::MainMenu { profile }).await?;
 
     Ok(())
 }
 
-pub async fn move_to_edit_menu(
-    bot: &Bot,
-    dialogue: &MyDialogue,
-    chat_id: ChatId,
-    profile: Profile,
-) -> HandlerResult {
-    let lang = profile_lang(&profile);
-
-    show_edit_menu(bot, chat_id, lang).await?;
+pub async fn transition_to_edit_menu(dialogue: &AppDialogue, profile: Profile) -> HandlerResult {
     dialogue.update(State::EditMenu { profile }).await?;
 
     Ok(())
 }
 
-pub async fn move_to_settings_menu(
+pub async fn transition_to_settings_menu(
     bot: &Bot,
-    dialogue: &MyDialogue,
+    dialogue: &AppDialogue,
     chat_id: ChatId,
     profile: Profile,
 ) -> HandlerResult {
-    let lang = profile_lang(&profile);
+    let language = profile_language(&profile);
 
-    show_settings_menu(bot, chat_id, lang).await?;
+    show_settings_menu(bot, chat_id, language).await?;
     dialogue.update(State::SettingsMenu { profile }).await?;
 
     Ok(())
 }
 
-pub fn make_gender_prompt_keyboard(lang: Lang) -> KeyboardMarkup {
-    make_gender_keyboard(lang)
+pub fn build_gender_selection_keyboard(language: Language) -> KeyboardMarkup {
+    make_gender_keyboard(language)
 }
 
 pub fn extract_photo_file_id(msg: &Message) -> Option<String> {
@@ -255,15 +241,32 @@ pub fn extract_photo_file_id(msg: &Message) -> Option<String> {
         .map(|largest_photo| largest_photo.file.id.to_string())
 }
 
-pub fn match_notification_text(profile_row: &ProfileRow, lang: Lang) -> String {
+pub fn build_match_notification_text(profile_row: &ProfileRow, language: Language) -> String {
     match profile_contact_link(profile_row) {
-        Some(link) => format!("{}{}", lang.text(TextKey::MatchStartChatting), link),
+        Some(link) => format!("{}{}", language.text(TextKey::MatchStartChatting), link),
         None => format!(
             "{} {}",
-            lang.text(TextKey::MatchNoUsername),
+            language.text(TextKey::MatchNoUsername),
             html_escape(&profile_row.name)
         ),
     }
+}
+
+fn build_incoming_like_prompt(profile: &Profile, pending_like_count: i64) -> String {
+    let language = profile_language(profile);
+    let is_plural = pending_like_count != 1;
+    let key = match (profile.looking_for, is_plural) {
+        (Some(Gender::Female), false) => TextKey::IncomingLikePromptFemaleSingular,
+        (Some(Gender::Female), true) => TextKey::IncomingLikePromptFemalePlural,
+        (Some(Gender::Male), false) => TextKey::IncomingLikePromptMaleSingular,
+        (Some(Gender::Male), true) => TextKey::IncomingLikePromptMalePlural,
+        (None, false) => TextKey::IncomingLikePromptNeutralSingular,
+        (None, true) => TextKey::IncomingLikePromptNeutralPlural,
+    };
+
+    language
+        .text(key)
+        .replace("{count}", &pending_like_count.to_string())
 }
 
 fn html_escape(text: &str) -> String {

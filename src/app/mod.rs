@@ -1,89 +1,105 @@
+pub mod chat_ui;
 pub mod handlers;
 pub mod types;
-pub mod ui;
 
-pub use types::Lang;
+pub use types::{AppResult, Language};
 
-use crate::app::handlers::{confirm_profile, edit_description, edit_photo, edit_profile_menu, global_incoming_like_decision, global_start, handle_incoming_like_decision, handle_profile_action, main_menu, receive_age, receive_description, receive_gender, receive_language, receive_language_preference, receive_location, receive_location_choice, receive_looking_for, receive_name, receive_photo, settings_menu, start};
+use crate::app::chat_ui::{is_incoming_like_decision_message, is_start_command};
+use crate::app::handlers::{
+    handle_age_input, handle_description_edit, handle_description_step, handle_edit_menu,
+    handle_gender_selection, handle_global_incoming_like_decision, handle_incoming_like_decision,
+    handle_initial_state, handle_language_preference_selection, handle_language_selection,
+    handle_location_choice_selection, handle_location_input, handle_main_menu,
+    handle_match_preference_selection, handle_name_input, handle_photo_edit, handle_photo_step,
+    handle_profile_action, handle_profile_confirmation, handle_settings_menu, handle_start_command,
+};
 use crate::app::types::State;
-use crate::app::ui::{is_incoming_like_decision_message, is_start_command};
 use crate::db::connect_db;
 use sqlx::PgPool;
 use teloxide::{dispatching::dialogue::InMemStorage, dptree, prelude::*};
 
-pub async fn run() {
+pub async fn run() -> AppResult<()> {
     dotenvy::dotenv().ok();
 
     pretty_env_logger::init();
     log::info!("Starting TeleMatch bot");
 
     let bot = Bot::from_env();
-    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let geocoder = crate::geocoding::Geocoder::new()
-        .expect("GOOGLE_MAPS_API_KEY must be set and geocoder must initialize");
-
-    let pool: PgPool = connect_db(&database_url)
-        .await
-        .expect("Failed to connect to database");
+    let database_url = std::env::var("DATABASE_URL")?;
+    let geocoder = crate::services::Geocoder::new()?;
+    let pool: PgPool = connect_db(&database_url).await?;
 
     Dispatcher::builder(
         bot,
         Update::filter_message()
             .enter_dialogue::<Message, InMemStorage<State>, State>()
-            .branch(dptree::filter(is_start_command).endpoint(global_start))
+            .branch(dptree::filter(is_start_command).endpoint(handle_start_command))
             .branch(
                 dptree::filter(is_incoming_like_decision_message)
-                    .endpoint(global_incoming_like_decision),
+                    .endpoint(handle_global_incoming_like_decision),
             )
-            .branch(dptree::case![State::Start].endpoint(start))
-            .branch(dptree::case![State::WaitingForLanguage].endpoint(receive_language))
+            .branch(dptree::case![State::Start].endpoint(handle_initial_state))
+            .branch(dptree::case![State::WaitingForLanguage].endpoint(handle_language_selection))
             .branch(
                 dptree::case![State::WaitingForLanguagePreference { profile }]
-                    .endpoint(receive_language_preference),
+                    .endpoint(handle_language_preference_selection),
             )
-            .branch(dptree::case![State::WaitingForName { draft }].endpoint(receive_name))
-            .branch(dptree::case![State::WaitingForGender { draft }].endpoint(receive_gender))
+            .branch(dptree::case![State::WaitingForName { draft }].endpoint(handle_name_input))
             .branch(
-                dptree::case![State::WaitingForLookingFor { draft }].endpoint(receive_looking_for),
+                dptree::case![State::WaitingForGender { draft }].endpoint(handle_gender_selection),
             )
-            .branch(dptree::case![State::WaitingForAge { draft }].endpoint(receive_age))
-            .branch(dptree::case![State::WaitingForLocation { draft }].endpoint(receive_location))
+            .branch(
+                dptree::case![State::WaitingForLookingFor { draft }]
+                    .endpoint(handle_match_preference_selection),
+            )
+            .branch(dptree::case![State::WaitingForAge { draft }].endpoint(handle_age_input))
+            .branch(
+                dptree::case![State::WaitingForLocation { draft }].endpoint(handle_location_input),
+            )
             .branch(
                 dptree::case![State::WaitingForLocationChoice { draft, candidates }]
-                    .endpoint(receive_location_choice),
+                    .endpoint(handle_location_choice_selection),
             )
             .branch(
-                dptree::case![State::WaitingForDescription { draft }].endpoint(receive_description),
+                dptree::case![State::WaitingForDescription { draft }]
+                    .endpoint(handle_description_step),
             )
-            .branch(dptree::case![State::WaitingForPhoto { draft }].endpoint(receive_photo))
-            .branch(dptree::case![State::ConfirmProfile { draft }].endpoint(confirm_profile))
-            .branch(dptree::case![State::EditMenu { profile }].endpoint(edit_profile_menu))
-            .branch(dptree::case![State::SettingsMenu { profile }].endpoint(settings_menu))
-            .branch(dptree::case![State::WaitingForPhotoEdit { draft }].endpoint(edit_photo))
+            .branch(dptree::case![State::WaitingForPhoto { draft }].endpoint(handle_photo_step))
+            .branch(
+                dptree::case![State::ConfirmProfile { draft }]
+                    .endpoint(handle_profile_confirmation),
+            )
+            .branch(dptree::case![State::EditMenu { profile }].endpoint(handle_edit_menu))
+            .branch(dptree::case![State::SettingsMenu { profile }].endpoint(handle_settings_menu))
+            .branch(dptree::case![State::WaitingForPhotoEdit { draft }].endpoint(handle_photo_edit))
             .branch(
                 dptree::case![State::WaitingForDescriptionEdit { draft }]
-                    .endpoint(edit_description),
+                    .endpoint(handle_description_edit),
             )
             .branch(
                 dptree::case![State::AwaitingIncomingLikeDecision {
                     profile,
-                    liked_you_user_id
+                    incoming_like_user_id,
+                    pending_like_count,
+                    target_kind
                 }]
                 .endpoint(handle_incoming_like_decision),
             )
             .branch(
                 dptree::case![State::AwaitingProfileAction {
                     profile,
-                    shown_profile_user_id,
-                    return_to_menu
+                    displayed_profile_user_id,
+                    return_to_main_menu
                 }]
                 .endpoint(handle_profile_action),
             )
-            .branch(dptree::case![State::MainMenu { profile }].endpoint(main_menu)),
+            .branch(dptree::case![State::MainMenu { profile }].endpoint(handle_main_menu)),
     )
     .dependencies(dptree::deps![InMemStorage::<State>::new(), pool, geocoder])
     .enable_ctrlc_handler()
     .build()
     .dispatch()
     .await;
+
+    Ok(())
 }
