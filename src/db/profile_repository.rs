@@ -4,7 +4,7 @@ use sqlx::{FromRow, PgPool};
 #[derive(Debug, Clone, FromRow)]
 pub struct ProfileRow {
     pub telegram_user_id: i64,
-    pub chat_id: Option<i64>,
+    pub chat_id: i64,
     pub username: Option<String>,
     pub language_code: String,
     pub name: String,
@@ -22,7 +22,7 @@ impl ProfileRow {
     pub fn to_profile(&self) -> Profile {
         Profile {
             telegram_user_id: Some(self.telegram_user_id),
-            chat_id: self.chat_id,
+            chat_id: Option::from(self.chat_id),
             username: self.username.clone(),
             language_code: Some(self.language_code.clone()),
             name: Some(self.name.clone()),
@@ -39,8 +39,8 @@ impl ProfileRow {
 }
 
 pub async fn save_profile(pool: &PgPool, profile: &CompleteProfile) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
+    sqlx::query!(
+        "
         INSERT INTO profiles (
             telegram_user_id,
             chat_id,
@@ -71,21 +71,21 @@ pub async fn save_profile(pool: &PgPool, profile: &CompleteProfile) -> Result<()
             photo_file_id = EXCLUDED.photo_file_id,
             latitude = EXCLUDED.latitude,
             longitude = EXCLUDED.longitude
-        "#,
+        ",
+        profile.telegram_user_id,
+        profile.chat_id,
+        profile.username.as_deref(),
+        profile.language_code,
+        profile.name,
+        profile.gender.as_db_code(),
+        profile.looking_for.as_db_code(),
+        profile.age as i16,
+        profile.location,
+        profile.description,
+        profile.photo,
+        profile.latitude,
+        profile.longitude,
     )
-    .bind(profile.telegram_user_id)
-    .bind(profile.chat_id)
-    .bind(profile.username.as_deref())
-    .bind(&profile.language_code)
-    .bind(&profile.name)
-    .bind(profile.gender.as_db_code())
-    .bind(profile.looking_for.as_db_code())
-    .bind(profile.age as i16)
-    .bind(&profile.location)
-    .bind(&profile.description)
-    .bind(&profile.photo)
-    .bind(profile.latitude)
-    .bind(profile.longitude)
     .execute(pool)
     .await?;
 
@@ -96,8 +96,9 @@ pub async fn get_next_profile_for_user(
     pool: &PgPool,
     telegram_user_id: i64,
 ) -> Result<Option<ProfileRow>, sqlx::Error> {
-    sqlx::query_as::<_, ProfileRow>(
-        r#"
+    sqlx::query_as!(
+        ProfileRow,
+        "
         SELECT
             p.telegram_user_id,
             p.chat_id,
@@ -120,8 +121,6 @@ pub async fn get_next_profile_for_user(
           AND p.looking_for = me.gender
           AND p.is_active = TRUE
           AND me.is_active = TRUE
-          AND p.latitude IS NOT NULL
-          AND p.longitude IS NOT NULL
           AND NOT EXISTS (
               SELECT 1
               FROM swipes s
@@ -130,25 +129,21 @@ pub async fn get_next_profile_for_user(
                 AND s.available_again_at > NOW()
           )
         ORDER BY
-          CASE
-              WHEN me.latitude IS NULL OR me.longitude IS NULL THEN NULL
-              ELSE 6371.0 * ACOS(
-                  LEAST(
-                      1.0,
-                      GREATEST(
-                          -1.0,
-                          COS(RADIANS(me.latitude)) * COS(RADIANS(p.latitude)) *
-                          COS(RADIANS(p.longitude) - RADIANS(me.longitude)) +
-                          SIN(RADIANS(me.latitude)) * SIN(RADIANS(p.latitude))
-                      )
-                  )
-              )
-          END NULLS LAST,
-          p.id DESC
-        LIMIT 1
-        "#,
+  6371.0 * ACOS(
+      LEAST(
+          1.0,
+          GREATEST(
+              -1.0,
+              COS(RADIANS(me.latitude)) * COS(RADIANS(p.latitude)) *
+              COS(RADIANS(p.longitude) - RADIANS(me.longitude)) +
+              SIN(RADIANS(me.latitude)) * SIN(RADIANS(p.latitude))
+          )
+      )
+  ),
+  p.id DESC
+LIMIT 1",
+        telegram_user_id
     )
-    .bind(telegram_user_id)
     .fetch_optional(pool)
     .await
 }
@@ -157,41 +152,41 @@ pub async fn get_profile_by_user_id(
     pool: &PgPool,
     telegram_user_id: i64,
 ) -> Result<Option<ProfileRow>, sqlx::Error> {
-    sqlx::query_as::<_, ProfileRow>(
-        r#"
-        SELECT
-            telegram_user_id,
-            chat_id,
-            username,
-            language_code,
-            name,
-            gender,
-            looking_for,
-            age,
-            location,
-            description,
-            photo_file_id,
-            latitude,
-            longitude
-        FROM profiles
-        WHERE telegram_user_id = $1
-        LIMIT 1
-        "#,
+    sqlx::query_as!(
+        ProfileRow,
+        "
+SELECT
+    telegram_user_id,
+    chat_id,
+    username,
+    language_code,
+    name,
+    gender,
+    looking_for,
+    age,
+    location,
+    description,
+    photo_file_id,
+    latitude,
+    longitude
+FROM profiles
+WHERE telegram_user_id = $1
+",
+        telegram_user_id
     )
-    .bind(telegram_user_id)
     .fetch_optional(pool)
     .await
 }
 
 pub async fn deactivate_profile(pool: &PgPool, telegram_user_id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
+    sqlx::query!(
+        "
         UPDATE profiles
         SET is_active = FALSE
         WHERE telegram_user_id = $1
-        "#,
+        ",
+        telegram_user_id
     )
-    .bind(telegram_user_id)
     .execute(pool)
     .await?;
 
@@ -199,14 +194,14 @@ pub async fn deactivate_profile(pool: &PgPool, telegram_user_id: i64) -> Result<
 }
 
 pub async fn activate_profile(pool: &PgPool, telegram_user_id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
+    sqlx::query!(
+        "
         UPDATE profiles
         SET is_active = TRUE
         WHERE telegram_user_id = $1
-        "#,
+        ",
+        telegram_user_id
     )
-    .bind(telegram_user_id)
     .execute(pool)
     .await?;
 

@@ -236,6 +236,7 @@ pub enum MainMenuAction {
 impl MainMenuAction {
     pub fn parse(text: &str) -> Option<Self> {
         match text.trim() {
+            // fallback
             "1" => Some(Self::ViewProfiles),
             "2" => Some(Self::MyProfile),
             "3" => Some(Self::DeactivateProfile),

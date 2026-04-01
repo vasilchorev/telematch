@@ -9,8 +9,8 @@ pub async fn save_swipe(
     to_user_id: i64,
     is_like: bool,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
+    sqlx::query!(
+        "
         INSERT INTO swipes (
             from_user_id,
             to_user_id,
@@ -24,11 +24,11 @@ pub async fn save_swipe(
             is_like = EXCLUDED.is_like,
             swiped_at = EXCLUDED.swiped_at,
             available_again_at = EXCLUDED.available_again_at
-        "#,
+        ",
+        from_user_id,
+        to_user_id,
+        is_like
     )
-    .bind(from_user_id)
-    .bind(to_user_id)
-    .bind(is_like)
     .execute(pool)
     .await?;
 
@@ -40,7 +40,7 @@ pub async fn did_user_like_me(
     my_user_id: i64,
     other_user_id: i64,
 ) -> Result<bool, sqlx::Error> {
-    let liked = sqlx::query_scalar::<_, bool>(
+    let liked = sqlx::query_scalar!(
         r#"
         SELECT EXISTS (
             SELECT 1
@@ -49,11 +49,11 @@ pub async fn did_user_like_me(
               AND to_user_id = $2
               AND is_like = TRUE
               AND available_again_at > NOW()
-        )
+        ) AS "exists!"
         "#,
+        other_user_id,
+        my_user_id
     )
-    .bind(other_user_id)
-    .bind(my_user_id)
     .fetch_one(pool)
     .await?;
 
@@ -64,7 +64,8 @@ pub async fn get_incoming_like_for_user(
     pool: &PgPool,
     telegram_user_id: i64,
 ) -> Result<Option<ProfileRow>, sqlx::Error> {
-    sqlx::query_as::<_, ProfileRow>(
+    sqlx::query_as!(
+        ProfileRow,
         r#"
         SELECT
             p.telegram_user_id,
@@ -96,8 +97,8 @@ pub async fn get_incoming_like_for_user(
         ORDER BY s.swiped_at DESC
         LIMIT 1
         "#,
+        telegram_user_id
     )
-    .bind(telegram_user_id)
     .fetch_optional(pool)
     .await
 }
@@ -106,9 +107,9 @@ pub async fn count_incoming_like_targets_for_user(
     pool: &PgPool,
     user_id: i64,
 ) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar::<_, i64>(
+    let count = sqlx::query_scalar!(
         r#"
-        SELECT
+        SELECT COALESCE((
             (
                 SELECT COUNT(*)
                 FROM swipes s
@@ -142,17 +143,20 @@ pub async fn count_incoming_like_targets_for_user(
                         AND mn.other_user_id = s1.to_user_id
                   )
             )
+        ), 0)::BIGINT AS "count!"
         "#,
+        user_id
     )
-    .bind(user_id)
     .fetch_one(pool)
-    .await
+    .await?;
+
+    Ok(count)
 }
 
 #[derive(Debug, FromRow)]
 struct PendingIncomingLikeTargetRow {
     telegram_user_id: i64,
-    chat_id: Option<i64>,
+    chat_id: i64,
     username: Option<String>,
     language_code: String,
     name: String,
@@ -212,7 +216,8 @@ pub async fn get_pending_incoming_like_target_for_user(
     pool: &PgPool,
     user_id: i64,
 ) -> Result<Option<PendingIncomingLikeTarget>, sqlx::Error> {
-    let row = sqlx::query_as::<_, PendingIncomingLikeTargetRow>(
+    let row = sqlx::query_as!(
+        PendingIncomingLikeTargetRow,
         r#"
         WITH pending_targets AS (
             SELECT
@@ -284,27 +289,27 @@ pub async fn get_pending_incoming_like_target_for_user(
               )
         )
         SELECT
-            telegram_user_id,
-            chat_id,
+            telegram_user_id AS "telegram_user_id!",
+            chat_id AS "chat_id!",
             username,
-            language_code,
-            name,
-            gender,
-            looking_for,
-            age,
-            location,
-            description,
-            photo_file_id,
-            latitude,
-            longitude,
-            target_kind,
-            COUNT(*) OVER() AS pending_like_count
+            language_code AS "language_code!",
+            name AS "name!",
+            gender AS "gender!",
+            looking_for AS "looking_for!",
+            age AS "age!",
+            location AS "location!",
+            description AS "description!",
+            photo_file_id AS "photo_file_id!",
+            latitude AS "latitude!",
+            longitude AS "longitude!",
+            target_kind AS "target_kind!",
+            COUNT(*) OVER() AS "pending_like_count!"
         FROM pending_targets
         ORDER BY priority, sort_time DESC
         LIMIT 1
         "#,
+        user_id
     )
-    .bind(user_id)
     .fetch_optional(pool)
     .await?;
 
@@ -316,18 +321,18 @@ pub async fn was_match_shown_to_user(
     user_id: i64,
     other_user_id: i64,
 ) -> Result<bool, sqlx::Error> {
-    let exists = sqlx::query_scalar::<_, bool>(
+    let exists = sqlx::query_scalar!(
         r#"
         SELECT EXISTS (
             SELECT 1
             FROM match_notifications
             WHERE user_id = $1
               AND other_user_id = $2
-        )
+        ) AS "exists!"
         "#,
+        user_id,
+        other_user_id
     )
-    .bind(user_id)
-    .bind(other_user_id)
     .fetch_one(pool)
     .await?;
 
@@ -339,15 +344,13 @@ pub async fn mark_match_shown_to_user(
     user_id: i64,
     other_user_id: i64,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
+    sqlx::query!(
         r#"
         INSERT INTO match_notifications (user_id, other_user_id)
         VALUES ($1, $2)
         ON CONFLICT (user_id, other_user_id) DO NOTHING
-        "#,
+        "#, user_id, other_user_id
     )
-    .bind(user_id)
-    .bind(other_user_id)
     .execute(pool)
     .await?;
 

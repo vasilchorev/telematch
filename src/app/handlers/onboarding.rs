@@ -468,7 +468,7 @@ async fn open_existing_profile_home(
     profile: Profile,
     pool: &PgPool,
 ) -> HandlerResult {
-    send_profile_card(bot, msg.chat.id, &profile, None, None, None).await?;
+    send_profile_card(bot, msg.chat.id, &profile, None, None).await?;
 
     if let Some(pending_target) = get_pending_incoming_like_target_for_user(pool, user_id).await? {
         prompt_for_incoming_like_decision(

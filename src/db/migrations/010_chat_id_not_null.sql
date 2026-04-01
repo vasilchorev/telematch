@@ -1,0 +1,2 @@
+ALTER TABLE profiles
+    ALTER COLUMN chat_id SET NOT NULL;

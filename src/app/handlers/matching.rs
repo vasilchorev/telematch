@@ -415,14 +415,9 @@ async fn notify_liked_user(bot: &Bot, target_user_id: i64, pool: &PgPool) -> Han
         return Ok(());
     };
 
-    let Some(chat_id) = target_profile_row.chat_id else {
-        log::warn!("Unable to notify liked user {target_user_id}: chat_id is missing");
-        return Ok(());
-    };
-
     let target_profile = target_profile_row.to_profile();
     let pending_like_count = count_incoming_like_targets_for_user(pool, target_user_id).await?;
-    prompt_for_incoming_like_decision(bot, ChatId(chat_id), &target_profile, pending_like_count)
+    prompt_for_incoming_like_decision(bot, ChatId(target_profile_row.chat_id), &target_profile, pending_like_count)
         .await?;
 
     Ok(())
@@ -451,17 +446,12 @@ async fn notify_mutual_match(
     .disable_link_preview(true)
     .await?;
 
-    let Some(other_chat_id_raw) = other_profile_row.chat_id else {
-        log::warn!("Unable to notify matched user {other_user_id}: chat_id is missing");
-        return Ok(());
-    };
-
     if !was_match_shown_to_user(pool, other_user_id, requester_user_id).await? {
         let other_profile = other_profile_row.to_profile();
         let pending_like_count = count_incoming_like_targets_for_user(pool, other_user_id).await?;
         prompt_for_incoming_like_decision(
             bot,
-            ChatId(other_chat_id_raw),
+            ChatId(other_profile_row.chat_id),
             &other_profile,
             pending_like_count,
         )
@@ -481,8 +471,8 @@ async fn reveal_profile(
     mark_as_shown: Option<(&PgPool, i64)>,
 ) -> HandlerResult {
     let language = profile_language(&current_user_profile);
-    let displayed_profile_user_id = target_profile_row.telegram_user_id;
     let displayed_profile = target_profile_row.to_profile();
+    let displayed_profile_user_id = target_profile_row.telegram_user_id;
 
     if let Some((pool, user_id)) = mark_as_shown {
         mark_match_shown_to_user(pool, user_id, displayed_profile_user_id).await?;
@@ -494,10 +484,8 @@ async fn reveal_profile(
         dialogue,
         chat_id,
         current_user_profile,
-        displayed_profile_user_id,
         &displayed_profile,
         Some(language.text(TextKey::ThisPersonLikedYou)),
-        None,
         return_to_main_menu,
     )
     .await?;
@@ -526,7 +514,6 @@ async fn reveal_pending_mutual_match(
         chat_id,
         &displayed_profile,
         Some(language.text(TextKey::ThisPersonLikedYou)),
-        None,
         None,
     )
     .await?;
@@ -584,9 +571,7 @@ async fn show_next_profile_or_menu(
         dialogue,
         msg.chat.id,
         current_user_profile,
-        next_profile_row.telegram_user_id,
         &next_profile_row.to_profile(),
-        None,
         None,
         false,
     )
@@ -633,7 +618,6 @@ async fn handle_main_menu_action(
                 bot,
                 msg.chat.id,
                 &profile,
-                None,
                 None,
                 Some(make_edit_profile_keyboard(language).into()),
             )

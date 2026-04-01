@@ -59,7 +59,6 @@ pub async fn send_profile_card(
     chat_id: ChatId,
     profile: &Profile,
     header_text: Option<&str>,
-    footer_text: Option<&str>,
     reply_markup: Option<ReplyMarkup>,
 ) -> HandlerResult {
     let mut text = String::new();
@@ -70,11 +69,6 @@ pub async fn send_profile_card(
     }
 
     text.push_str(&profile.display_text());
-
-    if let Some(footer) = footer_text {
-        text.push_str("\n\n");
-        text.push_str(footer);
-    }
 
     if let Some(photo) = profile.photo.as_deref() {
         let mut request = bot
@@ -159,7 +153,7 @@ pub async fn show_profile_confirmation_preview(
     language: Language,
     draft_profile: &Profile,
 ) -> HandlerResult {
-    send_profile_card(bot, chat_id, draft_profile, None, None, None).await?;
+    send_profile_card(bot, chat_id, draft_profile, None, None).await?;
     bot.send_message(chat_id, language.text(TextKey::SaveThisProfile))
         .reply_markup(make_profile_confirmation_keyboard(language))
         .await?;
@@ -172,18 +166,17 @@ pub async fn show_candidate_profile(
     dialogue: &AppDialogue,
     chat_id: ChatId,
     current_user_profile: Profile,
-    displayed_profile_user_id: i64,
     displayed_profile: &Profile,
     header_text: Option<&str>,
-    footer_text: Option<&str>,
     return_to_main_menu: bool,
 ) -> HandlerResult {
+    let displayed_profile_user_id = displayed_profile.telegram_user_id.unwrap_or(0);
+
     send_profile_card(
         bot,
         chat_id,
         displayed_profile,
         header_text,
-        footer_text,
         Some(make_profile_action_keyboard().into()),
     )
     .await?;
