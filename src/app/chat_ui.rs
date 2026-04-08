@@ -13,14 +13,15 @@ use crate::telegram::keyboards::{
 use teloxide::prelude::*;
 use teloxide::types::{FileId, InputFile, KeyboardMarkup, ReplyMarkup};
 
+#[allow(clippy::needless_pass_by_value)]
 pub fn is_incoming_like_decision_message(msg: Message) -> bool {
     msg.text().and_then(IncomingLikeDecision::parse).is_some()
 }
 
+#[allow(clippy::needless_pass_by_value)]
 pub fn is_start_command(msg: Message) -> bool {
     msg.text()
-        .map(|text| text.trim_start().starts_with("/start"))
-        .unwrap_or(false)
+        .is_some_and(|text| text.trim_start().starts_with("/start"))
 }
 
 pub async fn prompt_for_language_selection(
@@ -49,7 +50,8 @@ pub async fn require_sender(
     };
 
     Ok(Some(SenderInfo {
-        telegram_user_id: user.id.0 as i64,
+        telegram_user_id: i64::try_from(user.id.0)
+            .expect("Telegram user id does not fit into i64"),
         telegram_username: user.username.clone(),
     }))
 }
@@ -235,14 +237,16 @@ pub fn extract_photo_file_id(msg: &Message) -> Option<String> {
 }
 
 pub fn build_match_notification_text(profile_row: &ProfileRow, language: Language) -> String {
-    match profile_contact_link(profile_row) {
-        Some(link) => format!("{}{}", language.text(TextKey::MatchStartChatting), link),
-        None => format!(
-            "{} {}",
-            language.text(TextKey::MatchNoUsername),
-            html_escape(&profile_row.name)
-        ),
-    }
+    profile_contact_link(profile_row).map_or_else(
+        || {
+            format!(
+                "{} {}",
+                language.text(TextKey::MatchNoUsername),
+                html_escape(&profile_row.name)
+            )
+        },
+        |link| format!("{}{}", language.text(TextKey::MatchStartChatting), link),
+    )
 }
 
 fn build_incoming_like_prompt(profile: &Profile, pending_like_count: i64) -> String {

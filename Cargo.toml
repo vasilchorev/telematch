@@ -1,5 +1,10 @@
 [package]
 name = "telematch"
+description = "A Telegram bot for matching users based on their preferences."
+license = "MIT"
+repository = "https://github.com/vasylkhorev/telematch"
+keywords = ["telegram", "bot", "matching", "rust"]
+categories = ["network-programming", "social-networking"]
 version = "0.1.0"
 edition = "2024"
 
@@ -19,3 +24,6 @@ sqlx = { version = "0.8", features = [
 
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "query"] }
 serde = { version = "1", features = ["derive"] }
+
+[lints.clippy]
+multiple_crate_versions = "allow"

@@ -511,9 +511,7 @@ async fn save_current_draft(
         Ok(profile) => profile,
         Err(error) => {
             log::warn!(
-                "Refusing to save incomplete profile for user {}: {}",
-                sender_user_id,
-                error
+                "Refusing to save incomplete profile for user {sender_user_id}: {error}",
             );
             bot.send_message(
                 msg.chat.id,
@@ -527,7 +525,7 @@ async fn save_current_draft(
 
     save_profile(pool, &complete_profile).await?;
 
-    log::info!("Saved profile for user {}", sender_user_id);
+    log::info!("Saved profile for user {sender_user_id}");
     transition_to_main_menu(bot, dialogue, msg.chat.id, draft).await?;
 
     Ok(())

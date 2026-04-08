@@ -51,9 +51,11 @@ pub enum TextKey {
 }
 
 impl Language {
-    pub fn text(self, key: TextKey) -> &'static str {
+    #[must_use]
+    #[allow(clippy::too_many_lines)]
+    pub const fn text(self, key: TextKey) -> &'static str {
         match self {
-            Language::En => match key {
+            Self::En => match key {
                 TextKey::RebuildProfile => "Let's update your profile. What's your name?",
                 TextKey::WhatIsYourName => "What's your name?",
                 TextKey::SelectGender => "Select your gender.",
@@ -119,7 +121,7 @@ impl Language {
                 TextKey::Skip => "👎",
                 TextKey::SendLocationButton => "📍 Share location",
             },
-            Language::Sk => match key {
+            Self::Sk => match key {
                 TextKey::RebuildProfile => "Poďme upraviť tvoj profil. Ako sa voláš?",
                 TextKey::WhatIsYourName => "Ako sa voláš?",
                 TextKey::SelectGender => "Vyber svoje pohlavie.",
@@ -183,7 +185,7 @@ impl Language {
                 TextKey::Skip => "👎",
                 TextKey::SendLocationButton => "📍 Zdieľať polohu",
             },
-            Language::Uk => match key {
+            Self::Uk => match key {
                 TextKey::RebuildProfile => "Давай оновимо твій профіль. Як тебе звати?",
                 TextKey::WhatIsYourName => "Як тебе звати?",
                 TextKey::SelectGender => "Обери свою стать.",

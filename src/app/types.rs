@@ -25,6 +25,7 @@ pub enum Language {
 }
 
 impl Language {
+    #[must_use]
     pub fn from_text(text: &str) -> Option<Self> {
         match text.trim() {
             ENGLISH_LANGUAGE_BUTTON_TEXT => Some(Self::En),
@@ -33,15 +34,15 @@ impl Language {
             _ => None,
         }
     }
-
-    pub fn as_db_code(self) -> &'static str {
+    #[must_use]
+    pub const fn as_db_code(self) -> &'static str {
         match self {
             Self::En => "en",
             Self::Sk => "sk",
             Self::Uk => "uk",
         }
     }
-
+    #[must_use]
     pub fn from_db_code(code: &str) -> Self {
         match code {
             "sk" => Self::Sk,
@@ -55,8 +56,7 @@ pub fn profile_language(profile: &Profile) -> Language {
     profile
         .language_code
         .as_deref()
-        .map(Language::from_db_code)
-        .unwrap_or(Language::En)
+        .map_or(Language::En ,Language::from_db_code)
 }
 
 #[derive(Clone, Default)]
@@ -124,9 +124,9 @@ pub enum State {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct SenderInfo {
-    pub(crate) telegram_user_id: i64,
-    pub(crate) telegram_username: Option<String>,
+pub struct SenderInfo {
+    pub telegram_user_id: i64,
+    pub telegram_username: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

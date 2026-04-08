@@ -357,11 +357,7 @@ async fn apply_swipe_decision(
 ) -> HandlerResult {
     match decision {
         SwipeDecision::Like => {
-            log::info!(
-                "User {} liked user {}",
-                sender_user_id,
-                displayed_profile_user_id
-            );
+            log::info!("User {sender_user_id} liked user {displayed_profile_user_id}",);
             save_swipe(pool, sender_user_id, displayed_profile_user_id, true).await?;
 
             if did_user_like_me(pool, sender_user_id, displayed_profile_user_id).await? {
@@ -379,11 +375,7 @@ async fn apply_swipe_decision(
             }
         }
         SwipeDecision::Skip => {
-            log::info!(
-                "User {} skipped user {}",
-                sender_user_id,
-                displayed_profile_user_id
-            );
+            log::info!("User {sender_user_id} skipped user {displayed_profile_user_id}",);
             save_swipe(pool, sender_user_id, displayed_profile_user_id, false).await?;
         }
     }
@@ -417,8 +409,13 @@ async fn notify_liked_user(bot: &Bot, target_user_id: i64, pool: &PgPool) -> Han
 
     let target_profile = target_profile_row.to_profile();
     let pending_like_count = count_incoming_like_targets_for_user(pool, target_user_id).await?;
-    prompt_for_incoming_like_decision(bot, ChatId(target_profile_row.chat_id), &target_profile, pending_like_count)
-        .await?;
+    prompt_for_incoming_like_decision(
+        bot,
+        ChatId(target_profile_row.chat_id),
+        &target_profile,
+        pending_like_count,
+    )
+    .await?;
 
     Ok(())
 }

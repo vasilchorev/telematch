@@ -28,8 +28,7 @@ impl Profile {
         let name = self.name.as_deref().unwrap_or("Unknown");
         let age = self
             .age
-            .map(|age| age.to_string())
-            .unwrap_or_else(|| "?".to_string());
+            .map_or_else(|| "?".to_string(), |age| age.to_string());
         let location = self.location.as_deref().unwrap_or("Unknown location");
         let description = self
             .description
@@ -183,7 +182,7 @@ impl Gender {
         }
     }
 
-    pub fn as_db_code(self) -> &'static str {
+    pub const fn as_db_code(self) -> &'static str {
         match self {
             Self::Male => "M",
             Self::Female => "F",
