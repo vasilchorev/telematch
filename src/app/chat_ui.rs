@@ -297,8 +297,7 @@ fn telegram_username_link_html(username: &str, name: &str) -> String {
 }
 
 fn is_command(text: &str, command: &str) -> bool {
-    text.trim_start()
-        .split_whitespace()
+    text.split_whitespace()
         .next()
         .and_then(|command_text| command_text.strip_prefix('/'))
         .and_then(|command_text| command_text.split('@').next())

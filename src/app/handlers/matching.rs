@@ -208,8 +208,7 @@ pub async fn handle_incoming_like_decision(
                 &dialogue,
                 msg.chat.id,
                 profile,
-                incoming_like_profile_row,
-                target_kind,
+                (incoming_like_profile_row, target_kind),
                 &pool,
                 true,
             )
@@ -286,8 +285,7 @@ pub async fn handle_global_incoming_like_decision(
                 &dialogue,
                 msg.chat.id,
                 current_user_profile,
-                target.profile_row,
-                target.target_kind,
+                (target.profile_row, target.target_kind),
                 &pool,
                 true,
             )
@@ -364,8 +362,7 @@ async fn reveal_incoming_like_target(
     dialogue: &AppDialogue,
     chat_id: ChatId,
     current_user_profile: Profile,
-    target_profile_row: ProfileRow,
-    target_kind: IncomingLikeTargetKind,
+    (target_profile_row, target_kind): (ProfileRow, IncomingLikeTargetKind),
     pool: &PgPool,
     return_to_main_menu: bool,
 ) -> HandlerResult {
