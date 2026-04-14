@@ -3,6 +3,9 @@ use crate::db::profile_repository::ProfileRow;
 use sqlx::FromRow;
 use sqlx::PgPool;
 
+const TARGET_KIND_INCOMING_LIKE: &str = "incoming_like";
+const TARGET_KIND_PENDING_MUTUAL_MATCH: &str = "pending_mutual_match";
+
 pub async fn save_swipe(
     pool: &PgPool,
     from_user_id: i64,
@@ -178,36 +181,56 @@ pub struct PendingIncomingLikeTarget {
     pub target_kind: IncomingLikeTargetKind,
     pub pending_like_count: i64,
 }
-// take trosku nestastne no..
-impl PendingIncomingLikeTargetRow {
-    fn into_pending_target(self) -> PendingIncomingLikeTarget {
-        let target_kind = match self.target_kind.as_str() {
-            "incoming_like" => IncomingLikeTargetKind::IncomingLike,
-            "pending_mutual_match" => IncomingLikeTargetKind::PendingMutualMatch,
-            other => {
-                log::warn!("Unexpected pending target kind from database: {other}");
-                IncomingLikeTargetKind::IncomingLike
-            }
-        };
 
-        PendingIncomingLikeTarget {
-            profile_row: ProfileRow {
-                telegram_user_id: self.telegram_user_id,
-                chat_id: self.chat_id,
-                username: self.username,
-                language_code: self.language_code,
-                name: self.name,
-                gender: self.gender,
-                looking_for: self.looking_for,
-                age: self.age,
-                location: self.location,
-                description: self.description,
-                photo_file_id: self.photo_file_id,
-                latitude: self.latitude,
-                longitude: self.longitude,
-            },
+impl From<PendingIncomingLikeTargetRow> for PendingIncomingLikeTarget {
+    fn from(row: PendingIncomingLikeTargetRow) -> Self {
+        let PendingIncomingLikeTargetRow {
+            telegram_user_id,
+            chat_id,
+            username,
+            language_code,
+            name,
+            gender,
+            looking_for,
+            age,
+            location,
+            description,
+            photo_file_id,
+            latitude,
+            longitude,
             target_kind,
-            pending_like_count: self.pending_like_count,
+            pending_like_count,
+        } = row;
+
+        Self {
+            profile_row: ProfileRow {
+                telegram_user_id,
+                chat_id,
+                username,
+                language_code,
+                name,
+                gender,
+                looking_for,
+                age,
+                location,
+                description,
+                photo_file_id,
+                latitude,
+                longitude,
+            },
+            target_kind: parse_target_kind(&target_kind),
+            pending_like_count,
+        }
+    }
+}
+
+fn parse_target_kind(target_kind: &str) -> IncomingLikeTargetKind {
+    match target_kind {
+        TARGET_KIND_INCOMING_LIKE => IncomingLikeTargetKind::IncomingLike,
+        TARGET_KIND_PENDING_MUTUAL_MATCH => IncomingLikeTargetKind::PendingMutualMatch,
+        other => {
+            log::warn!("Unexpected pending target kind from database: {other}");
+            IncomingLikeTargetKind::IncomingLike
         }
     }
 }
@@ -313,7 +336,7 @@ pub async fn get_pending_incoming_like_target_for_user(
     .fetch_optional(pool)
     .await?;
 
-    Ok(row.map(PendingIncomingLikeTargetRow::into_pending_target))
+    Ok(row.map(Into::into))
 }
 
 pub async fn was_match_shown_to_user(
@@ -349,7 +372,9 @@ pub async fn mark_match_shown_to_user(
         INSERT INTO match_notifications (user_id, other_user_id)
         VALUES ($1, $2)
         ON CONFLICT (user_id, other_user_id) DO NOTHING
-        "#, user_id, other_user_id
+        "#,
+        user_id,
+        other_user_id
     )
     .execute(pool)
     .await?;

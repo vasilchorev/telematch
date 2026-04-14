@@ -2,7 +2,7 @@ use super::resume_main_menu_flow;
 use crate::app::chat_ui::{
     build_gender_selection_keyboard, extract_photo_file_id, prompt_for_incoming_like_decision,
     prompt_for_language_selection, require_sender, send_profile_card,
-    show_profile_confirmation_preview, transition_to_main_menu,
+    show_profile_confirmation_preview, transition_to_edit_menu, transition_to_main_menu,
 };
 use crate::app::types::{
     AppDialogue, ConfirmationAction, EditMenuAction, HandlerResult, Language, SenderInfo, State,
@@ -14,8 +14,9 @@ use crate::domain::{CompleteProfile, Gender, Profile};
 use crate::services::{CityCandidate, Geocoder};
 use crate::telegram::i18n::TextKey;
 use crate::telegram::keyboards::{
-    make_keep_previous_photo_keyboard, make_location_choice_keyboard, make_location_keyboard,
-    make_previous_value_keyboard, make_profile_confirmation_keyboard, make_skip_keyboard,
+    make_edit_profile_keyboard, make_keep_previous_photo_keyboard, make_location_choice_keyboard,
+    make_location_keyboard, make_previous_value_keyboard, make_profile_confirmation_keyboard,
+    make_skip_keyboard,
 };
 use sqlx::PgPool;
 use teloxide::prelude::*;
@@ -48,6 +49,59 @@ pub async fn handle_start_command(
     Ok(())
 }
 
+pub async fn handle_language_command(
+    bot: Bot,
+    dialogue: AppDialogue,
+    msg: Message,
+    pool: PgPool,
+) -> HandlerResult {
+    let Some(sender_info) = require_sender(&bot, &msg).await? else {
+        return Ok(());
+    };
+
+    if let Some(profile_row) = get_profile_by_user_id(&pool, sender_info.telegram_user_id).await? {
+        prompt_for_language_selection(&bot, msg.chat.id).await?;
+        dialogue
+            .update(State::WaitingForLanguagePreference {
+                profile: profile_row.to_profile(),
+            })
+            .await?;
+    } else {
+        enter_language_selection(&bot, &dialogue, msg.chat.id).await?;
+    }
+
+    Ok(())
+}
+
+pub async fn handle_my_profile_command(
+    bot: Bot,
+    dialogue: AppDialogue,
+    msg: Message,
+    pool: PgPool,
+) -> HandlerResult {
+    let Some(sender_info) = require_sender(&bot, &msg).await? else {
+        return Ok(());
+    };
+
+    if let Some(profile_row) = get_profile_by_user_id(&pool, sender_info.telegram_user_id).await? {
+        let profile = profile_row.to_profile();
+        let language = profile_language(&profile);
+        send_profile_card(
+            &bot,
+            msg.chat.id,
+            &profile,
+            None,
+            Some(make_edit_profile_keyboard(language).into()),
+        )
+        .await?;
+        transition_to_edit_menu(&dialogue, profile).await?;
+    } else {
+        enter_language_selection(&bot, &dialogue, msg.chat.id).await?;
+    }
+
+    Ok(())
+}
+
 pub async fn handle_initial_state(
     bot: Bot,
     dialogue: AppDialogue,
@@ -72,12 +126,7 @@ pub async fn handle_language_selection(
     dialogue: AppDialogue,
     msg: Message,
 ) -> HandlerResult {
-    let Some(text) = msg.text() else {
-        prompt_for_language_selection(&bot, msg.chat.id).await?;
-        return Ok(());
-    };
-
-    let Some(language) = Language::from_text(text) else {
+    let Some(language) = selected_language(&msg) else {
         prompt_for_language_selection(&bot, msg.chat.id).await?;
         return Ok(());
     };
@@ -108,7 +157,7 @@ pub async fn handle_name_input(
     mut draft: Profile,
 ) -> HandlerResult {
     let language = profile_language(&draft);
-    let Some(name) = msg.text().map(str::trim).filter(|text| !text.is_empty()) else {
+    let Some(name) = non_empty_message_text(&msg) else {
         prompt_for_name_input(
             &bot,
             msg.chat.id,
@@ -141,12 +190,7 @@ pub async fn handle_gender_selection(
 ) -> HandlerResult {
     let language = profile_language(&draft);
 
-    let Some(text) = msg.text() else {
-        prompt_for_gender_selection(&bot, msg.chat.id, language, TextKey::SelectGender).await?;
-        return Ok(());
-    };
-
-    let Some(gender) = Gender::from_text(text, language) else {
+    let Some(gender) = selected_gender(&msg, language) else {
         prompt_for_gender_selection(&bot, msg.chat.id, language, TextKey::SelectGender).await?;
         return Ok(());
     };
@@ -169,12 +213,7 @@ pub async fn handle_match_preference_selection(
 ) -> HandlerResult {
     let language = profile_language(&draft);
 
-    let Some(text) = msg.text() else {
-        prompt_for_gender_selection(&bot, msg.chat.id, language, TextKey::LookingFor).await?;
-        return Ok(());
-    };
-
-    let Some(looking_for) = Gender::from_text(text, language) else {
+    let Some(looking_for) = selected_gender(&msg, language) else {
         prompt_for_gender_selection(&bot, msg.chat.id, language, TextKey::LookingFor).await?;
         return Ok(());
     };
@@ -255,7 +294,7 @@ pub async fn handle_location_input(
         return transition_to_description_step(&bot, &dialogue, msg.chat.id, draft).await;
     }
 
-    let Some(query) = msg.text().map(str::trim).filter(|text| !text.is_empty()) else {
+    let Some(query) = non_empty_message_text(&msg) else {
         prompt_for_location_input(&bot, msg.chat.id, language, draft.location.as_deref()).await?;
         return Ok(());
     };
@@ -331,18 +370,16 @@ pub async fn handle_profile_confirmation(
 ) -> HandlerResult {
     let language = profile_language(&draft);
 
-    let Some(text) = msg.text() else {
-        bot.send_message(msg.chat.id, language.text(TextKey::UseKeyboardToConfirm))
-            .reply_markup(make_profile_confirmation_keyboard(language))
-            .await?;
+    let Some(action) = msg.text().and_then(ConfirmationAction::parse) else {
+        prompt_for_profile_confirmation_action(&bot, msg.chat.id, language).await?;
         return Ok(());
     };
 
-    match ConfirmationAction::parse(text) {
-        Some(ConfirmationAction::SaveProfile) => {
+    match action {
+        ConfirmationAction::SaveProfile => {
             save_current_draft(&bot, &dialogue, &msg, draft, &pool).await?;
         }
-        Some(ConfirmationAction::EditProfile) => {
+        ConfirmationAction::EditProfile => {
             prompt_for_name_input(
                 &bot,
                 msg.chat.id,
@@ -352,11 +389,6 @@ pub async fn handle_profile_confirmation(
             )
             .await?;
             dialogue.update(State::WaitingForName { draft }).await?;
-        }
-        None => {
-            bot.send_message(msg.chat.id, "Choose one of the available actions.")
-                .reply_markup(make_profile_confirmation_keyboard(language))
-                .await?;
         }
     }
 
@@ -377,43 +409,13 @@ pub async fn handle_edit_menu(
 
     match EditMenuAction::parse(text) {
         Some(EditMenuAction::EditProfile) => {
-            prompt_for_name_input(
-                &bot,
-                msg.chat.id,
-                language,
-                TextKey::RebuildProfile,
-                profile.name.as_deref(),
-            )
-            .await?;
-            dialogue
-                .update(State::WaitingForName { draft: profile })
-                .await?;
+            restart_profile_edit(&bot, &dialogue, msg.chat.id, profile, language).await?;
         }
         Some(EditMenuAction::ChangePhoto) => {
-            prompt_for_photo_input(
-                &bot,
-                msg.chat.id,
-                language,
-                TextKey::AskPhoto,
-                profile.photo.as_deref(),
-            )
-            .await?;
-            dialogue
-                .update(State::WaitingForPhotoEdit { draft: profile })
-                .await?;
+            begin_photo_edit(&bot, &dialogue, msg.chat.id, profile, language).await?;
         }
         Some(EditMenuAction::ChangeBio) => {
-            prompt_for_description_input(
-                &bot,
-                msg.chat.id,
-                language,
-                TextKey::AskBio,
-                profile.description.as_deref(),
-            )
-            .await?;
-            dialogue
-                .update(State::WaitingForDescriptionEdit { draft: profile })
-                .await?;
+            begin_description_edit(&bot, &dialogue, msg.chat.id, profile, language).await?;
         }
         Some(EditMenuAction::BackToMainMenu) => {
             transition_to_main_menu(&bot, &dialogue, msg.chat.id, profile).await?;
@@ -510,9 +512,7 @@ async fn save_current_draft(
     let complete_profile = match CompleteProfile::try_from(&draft) {
         Ok(profile) => profile,
         Err(error) => {
-            log::warn!(
-                "Refusing to save incomplete profile for user {sender_user_id}: {error}",
-            );
+            log::warn!("Refusing to save incomplete profile for user {sender_user_id}: {error}",);
             bot.send_message(
                 msg.chat.id,
                 "The profile is incomplete. Please edit it again from the beginning.",
@@ -535,6 +535,19 @@ async fn save_current_draft(
 enum DescriptionNextStep {
     Photo,
     Confirmation,
+}
+
+fn selected_language(msg: &Message) -> Option<Language> {
+    msg.text().and_then(Language::from_text)
+}
+
+fn selected_gender(msg: &Message, language: Language) -> Option<Gender> {
+    msg.text()
+        .and_then(|text| Gender::from_text(text, language))
+}
+
+fn non_empty_message_text(msg: &Message) -> Option<&str> {
+    msg.text().map(str::trim).filter(|text| !text.is_empty())
 }
 
 fn parse_age(text: &str) -> Option<u8> {
@@ -598,6 +611,18 @@ async fn prompt_for_location_choice(
     Ok(())
 }
 
+async fn prompt_for_profile_confirmation_action(
+    bot: &Bot,
+    chat_id: ChatId,
+    language: Language,
+) -> Result<(), teloxide::RequestError> {
+    bot.send_message(chat_id, language.text(TextKey::UseKeyboardToConfirm))
+        .reply_markup(make_profile_confirmation_keyboard(language))
+        .await?;
+
+    Ok(())
+}
+
 async fn prompt_for_description_input(
     bot: &Bot,
     chat_id: ChatId,
@@ -628,6 +653,72 @@ async fn prompt_for_photo_input(
         non_empty_value(previous_photo).map(|_| make_keep_previous_photo_keyboard(language)),
     )
     .await
+}
+
+async fn restart_profile_edit(
+    bot: &Bot,
+    dialogue: &AppDialogue,
+    chat_id: ChatId,
+    profile: Profile,
+    language: Language,
+) -> HandlerResult {
+    prompt_for_name_input(
+        bot,
+        chat_id,
+        language,
+        TextKey::RebuildProfile,
+        profile.name.as_deref(),
+    )
+    .await?;
+    dialogue
+        .update(State::WaitingForName { draft: profile })
+        .await?;
+
+    Ok(())
+}
+
+async fn begin_photo_edit(
+    bot: &Bot,
+    dialogue: &AppDialogue,
+    chat_id: ChatId,
+    profile: Profile,
+    language: Language,
+) -> HandlerResult {
+    prompt_for_photo_input(
+        bot,
+        chat_id,
+        language,
+        TextKey::AskPhoto,
+        profile.photo.as_deref(),
+    )
+    .await?;
+    dialogue
+        .update(State::WaitingForPhotoEdit { draft: profile })
+        .await?;
+
+    Ok(())
+}
+
+async fn begin_description_edit(
+    bot: &Bot,
+    dialogue: &AppDialogue,
+    chat_id: ChatId,
+    profile: Profile,
+    language: Language,
+) -> HandlerResult {
+    prompt_for_description_input(
+        bot,
+        chat_id,
+        language,
+        TextKey::AskBio,
+        profile.description.as_deref(),
+    )
+    .await?;
+    dialogue
+        .update(State::WaitingForDescriptionEdit { draft: profile })
+        .await?;
+
+    Ok(())
 }
 
 async fn transition_to_description_step(

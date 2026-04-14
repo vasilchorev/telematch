@@ -166,11 +166,11 @@ struct GeocodeResponse {
 #[derive(Debug, Deserialize)]
 struct GeocodeResult {
     formatted_address: String,
-
-address_components: Vec<AddressComponent>,
-types: Vec<String>,
-geometry: Geometry,
+    address_components: Vec<AddressComponent>,
+    types: Vec<String>,
+    geometry: Geometry,
 }
+
 impl GeocodeResult {
     fn is_city_like(&self) -> bool {
         CITY_LIKE_TYPES

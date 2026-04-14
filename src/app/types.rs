@@ -25,6 +25,8 @@ pub enum Language {
 }
 
 impl Language {
+    pub const ALL: [Self; 3] = [Self::En, Self::Sk, Self::Uk];
+
     #[must_use]
     pub fn from_text(text: &str) -> Option<Self> {
         match text.trim() {
@@ -56,7 +58,7 @@ pub fn profile_language(profile: &Profile) -> Language {
     profile
         .language_code
         .as_deref()
-        .map_or(Language::En ,Language::from_db_code)
+        .map_or(Language::En, Language::from_db_code)
 }
 
 #[derive(Clone, Default)]
@@ -137,13 +139,13 @@ pub enum ConfirmationAction {
 
 impl ConfirmationAction {
     pub fn parse(text: &str) -> Option<Self> {
-        if matches_text_key_in_any_language(text, TextKey::SaveProfile) {
-            Some(Self::SaveProfile)
-        } else if matches_text_key_in_any_language(text, TextKey::EditProfile) {
-            Some(Self::EditProfile)
-        } else {
-            None
-        }
+        parse_text_key_action(
+            text,
+            &[
+                (TextKey::SaveProfile, Self::SaveProfile),
+                (TextKey::EditProfile, Self::EditProfile),
+            ],
+        )
     }
 }
 
@@ -263,20 +265,23 @@ pub enum SwipeDecision {
 
 impl SwipeDecision {
     pub fn parse(text: &str) -> Option<Self> {
-        if matches_text_key_in_any_language(text, TextKey::Like) {
-            Some(Self::Like)
-        } else if matches_text_key_in_any_language(text, TextKey::Skip) {
-            Some(Self::Skip)
-        } else {
-            None
-        }
+        parse_text_key_action(
+            text,
+            &[(TextKey::Like, Self::Like), (TextKey::Skip, Self::Skip)],
+        )
     }
+}
+
+fn parse_text_key_action<T: Copy>(text: &str, mappings: &[(TextKey, T)]) -> Option<T> {
+    mappings
+        .iter()
+        .find_map(|(key, value)| matches_text_key_in_any_language(text, *key).then_some(*value))
 }
 
 fn matches_text_key_in_any_language(text: &str, key: TextKey) -> bool {
     let text = text.trim();
 
-    [Language::En, Language::Sk, Language::Uk]
+    Language::ALL
         .into_iter()
         .any(|language| text == language.text(key))
 }

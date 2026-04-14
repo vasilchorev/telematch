@@ -20,8 +20,17 @@ pub fn is_incoming_like_decision_message(msg: Message) -> bool {
 
 #[allow(clippy::needless_pass_by_value)]
 pub fn is_start_command(msg: Message) -> bool {
-    msg.text()
-        .is_some_and(|text| text.trim_start().starts_with("/start"))
+    msg.text().is_some_and(|text| is_command(text, "start"))
+}
+
+#[allow(clippy::needless_pass_by_value)]
+pub fn is_language_command(msg: Message) -> bool {
+    msg.text().is_some_and(|text| is_command(text, "language"))
+}
+
+#[allow(clippy::needless_pass_by_value)]
+pub fn is_my_profile_command(msg: Message) -> bool {
+    msg.text().is_some_and(|text| is_command(text, "myprofile"))
 }
 
 pub async fn prompt_for_language_selection(
@@ -50,8 +59,7 @@ pub async fn require_sender(
     };
 
     Ok(Some(SenderInfo {
-        telegram_user_id: i64::try_from(user.id.0)
-            .expect("Telegram user id does not fit into i64"),
+        telegram_user_id: i64::try_from(user.id.0).expect("Telegram user id does not fit into i64"),
         telegram_username: user.username.clone(),
     }))
 }
@@ -286,4 +294,13 @@ fn telegram_username_link_html(username: &str, name: &str) -> String {
         html_escape(username),
         html_escape(name)
     )
+}
+
+fn is_command(text: &str, command: &str) -> bool {
+    text.trim_start()
+        .split_whitespace()
+        .next()
+        .and_then(|command_text| command_text.strip_prefix('/'))
+        .and_then(|command_text| command_text.split('@').next())
+        == Some(command)
 }

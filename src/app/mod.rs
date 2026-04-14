@@ -4,18 +4,22 @@ pub mod types;
 
 pub use types::{AppResult, Language};
 
-use crate::app::chat_ui::{is_incoming_like_decision_message, is_start_command};
+use crate::app::chat_ui::{
+    is_incoming_like_decision_message, is_language_command, is_my_profile_command, is_start_command,
+};
 use crate::app::handlers::{
     handle_age_input, handle_description_edit, handle_description_step, handle_edit_menu,
     handle_gender_selection, handle_global_incoming_like_decision, handle_incoming_like_decision,
-    handle_initial_state, handle_language_preference_selection, handle_language_selection,
-    handle_location_choice_selection, handle_location_input, handle_main_menu,
-    handle_match_preference_selection, handle_name_input, handle_photo_edit, handle_photo_step,
-    handle_profile_action, handle_profile_confirmation, handle_settings_menu, handle_start_command,
+    handle_initial_state, handle_language_command, handle_language_preference_selection,
+    handle_language_selection, handle_location_choice_selection, handle_location_input,
+    handle_main_menu, handle_match_preference_selection, handle_my_profile_command,
+    handle_name_input, handle_photo_edit, handle_photo_step, handle_profile_action,
+    handle_profile_confirmation, handle_settings_menu, handle_start_command,
 };
 use crate::app::types::State;
 use crate::db::connect_db;
 use sqlx::PgPool;
+use teloxide::types::BotCommand;
 use teloxide::{dispatching::dialogue::InMemStorage, dptree, prelude::*};
 
 pub async fn run() -> AppResult<()> {
@@ -29,11 +33,20 @@ pub async fn run() -> AppResult<()> {
     let geocoder = crate::services::Geocoder::new()?;
     let pool: PgPool = connect_db(&database_url).await?;
 
+    bot.set_my_commands(vec![
+        BotCommand::new("start", "Open TeleMatch"),
+        BotCommand::new("myprofile", "Show my profile"),
+        BotCommand::new("language", "Change language"),
+    ])
+    .await?;
+
     Dispatcher::builder(
         bot,
         Update::filter_message()
             .enter_dialogue::<Message, InMemStorage<State>, State>()
             .branch(dptree::filter(is_start_command).endpoint(handle_start_command))
+            .branch(dptree::filter(is_language_command).endpoint(handle_language_command))
+            .branch(dptree::filter(is_my_profile_command).endpoint(handle_my_profile_command))
             .branch(
                 dptree::filter(is_incoming_like_decision_message)
                     .endpoint(handle_global_incoming_like_decision),

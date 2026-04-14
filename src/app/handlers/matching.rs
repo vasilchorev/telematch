@@ -5,7 +5,7 @@ use crate::app::chat_ui::{
     transition_to_main_menu, transition_to_settings_menu,
 };
 use crate::app::types::{
-    AppDialogue, HandlerResult, IncomingLikeDecision, IncomingLikeTargetKind, Language,
+    AppDialogue, AppResult, HandlerResult, IncomingLikeDecision, IncomingLikeTargetKind, Language,
     MainMenuAction, REVEAL_SPINNER_TEXT, SettingsAction, State, SwipeDecision, profile_language,
 };
 use crate::db::profile_repository::{
@@ -203,37 +203,17 @@ pub async fn handle_incoming_like_decision(
                 return Ok(());
             };
 
-            match target_kind {
-                IncomingLikeTargetKind::IncomingLike => {
-                    reveal_profile(
-                        &bot,
-                        &dialogue,
-                        msg.chat.id,
-                        profile,
-                        incoming_like_profile_row,
-                        true,
-                        None,
-                    )
-                    .await?;
-                }
-                IncomingLikeTargetKind::PendingMutualMatch => {
-                    let Some(user_id) = profile.telegram_user_id else {
-                        log::warn!("Unable to reveal pending mutual match: missing user id");
-                        return Ok(());
-                    };
-
-                    reveal_pending_mutual_match(
-                        &bot,
-                        &dialogue,
-                        msg.chat.id,
-                        profile,
-                        user_id,
-                        incoming_like_profile_row,
-                        &pool,
-                    )
-                    .await?;
-                }
-            }
+            reveal_incoming_like_target(
+                &bot,
+                &dialogue,
+                msg.chat.id,
+                profile,
+                incoming_like_profile_row,
+                target_kind,
+                &pool,
+                true,
+            )
+            .await?;
         }
         Some(IncomingLikeDecision::StopViewing) => {
             let Some(sender_info) = require_sender(&bot, &msg).await? else {
@@ -269,15 +249,13 @@ pub async fn handle_global_incoming_like_decision(
         return Ok(());
     };
 
-    let Some(current_user_profile_row) =
-        get_profile_by_user_id(&pool, sender_info.telegram_user_id).await?
+    let Some(current_user_profile) =
+        load_current_profile_for_incoming_like(&dialogue, sender_info.telegram_user_id, &pool)
+            .await?
     else {
         prompt_for_language_selection(&bot, msg.chat.id).await?;
-        dialogue.update(State::WaitingForLanguage).await?;
         return Ok(());
     };
-
-    let current_user_profile = current_user_profile_row.to_profile();
 
     let Some(text) = msg.text() else {
         return Ok(());
@@ -303,32 +281,17 @@ pub async fn handle_global_incoming_like_decision(
                 return Ok(());
             };
 
-            match target.target_kind {
-                IncomingLikeTargetKind::IncomingLike => {
-                    reveal_profile(
-                        &bot,
-                        &dialogue,
-                        msg.chat.id,
-                        current_user_profile,
-                        target.profile_row,
-                        true,
-                        None,
-                    )
-                    .await?;
-                }
-                IncomingLikeTargetKind::PendingMutualMatch => {
-                    reveal_pending_mutual_match(
-                        &bot,
-                        &dialogue,
-                        msg.chat.id,
-                        current_user_profile,
-                        sender_info.telegram_user_id,
-                        target.profile_row,
-                        &pool,
-                    )
-                    .await?;
-                }
-            }
+            reveal_incoming_like_target(
+                &bot,
+                &dialogue,
+                msg.chat.id,
+                current_user_profile,
+                target.profile_row,
+                target.target_kind,
+                &pool,
+                true,
+            )
+            .await?;
         }
         IncomingLikeDecision::StopViewing => {
             deactivate_and_return_to_menu(
@@ -344,6 +307,19 @@ pub async fn handle_global_incoming_like_decision(
     }
 
     Ok(())
+}
+
+async fn load_current_profile_for_incoming_like(
+    dialogue: &AppDialogue,
+    user_id: i64,
+    pool: &PgPool,
+) -> AppResult<Option<Profile>> {
+    let Some(profile_row) = get_profile_by_user_id(pool, user_id).await? else {
+        dialogue.update(State::WaitingForLanguage).await?;
+        return Ok(None);
+    };
+
+    Ok(Some(profile_row.to_profile()))
 }
 
 async fn apply_swipe_decision(
@@ -377,6 +353,51 @@ async fn apply_swipe_decision(
         SwipeDecision::Skip => {
             log::info!("User {sender_user_id} skipped user {displayed_profile_user_id}",);
             save_swipe(pool, sender_user_id, displayed_profile_user_id, false).await?;
+        }
+    }
+
+    Ok(())
+}
+
+async fn reveal_incoming_like_target(
+    bot: &Bot,
+    dialogue: &AppDialogue,
+    chat_id: ChatId,
+    current_user_profile: Profile,
+    target_profile_row: ProfileRow,
+    target_kind: IncomingLikeTargetKind,
+    pool: &PgPool,
+    return_to_main_menu: bool,
+) -> HandlerResult {
+    match target_kind {
+        IncomingLikeTargetKind::IncomingLike => {
+            reveal_profile(
+                bot,
+                dialogue,
+                chat_id,
+                current_user_profile,
+                target_profile_row,
+                return_to_main_menu,
+                None,
+            )
+            .await?;
+        }
+        IncomingLikeTargetKind::PendingMutualMatch => {
+            let Some(user_id) = current_user_profile.telegram_user_id else {
+                log::warn!("Unable to reveal pending mutual match: missing user id");
+                return Ok(());
+            };
+
+            reveal_pending_mutual_match(
+                bot,
+                dialogue,
+                chat_id,
+                current_user_profile,
+                user_id,
+                target_profile_row,
+                pool,
+            )
+            .await?;
         }
     }
 
@@ -519,8 +540,7 @@ async fn reveal_pending_mutual_match(
         build_match_notification_text(&target_profile_row, language),
     )
     .parse_mode(ParseMode::Html)
-    .disable_link_preview(true)
-    .await?;
+    .disable_link_preview(true).await?;
     transition_to_main_menu(bot, dialogue, chat_id, current_user_profile).await?;
 
     Ok(())

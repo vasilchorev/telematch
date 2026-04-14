@@ -8,8 +8,8 @@ pub use matching::{
 };
 pub use onboarding::{
     handle_age_input, handle_description_edit, handle_description_step, handle_edit_menu,
-    handle_gender_selection, handle_initial_state, handle_language_selection,
-    handle_location_choice_selection, handle_location_input, handle_match_preference_selection,
-    handle_name_input, handle_photo_edit, handle_photo_step, handle_profile_confirmation,
-    handle_start_command,
+    handle_gender_selection, handle_initial_state, handle_language_command,
+    handle_language_selection, handle_location_choice_selection, handle_location_input,
+    handle_match_preference_selection, handle_my_profile_command, handle_name_input,
+    handle_photo_edit, handle_photo_step, handle_profile_confirmation, handle_start_command,
 };
